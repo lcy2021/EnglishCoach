@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "setup": "node scripts/ensure-setup.mjs",
+    "predev": "node scripts/ensure-setup.mjs",
     "dev": "next dev -p 3010",
+    "prestart": "node scripts/ensure-setup.mjs",
     "build": "next build",
     "start": "next start -p 3010",
     "lint": "eslint .",

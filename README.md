@@ -17,14 +17,20 @@ Personal English reading workbench. Paste a URL or chat with an agent to fetch a
 ```bash
 cd english-coach
 npm install
-python -m pip install -r requirements.txt
-cp .env.example .env.local
-npm run dict:fetch
+npm run dev
 ```
 
-`requirements.txt` installs [Scrapling](https://scrapling.readthedocs.io/) with its fetcher extra. Fetching a URL runs `scripts/scrapling_fetch.py`, which keeps every text block, including short lines and pages that separate paragraphs with `<br>`. If Python or Scrapling is missing, the app falls back to a single HTTP fetch plus Mozilla Readability. Set `PYTHON` when `python` is not on `PATH`. If the pip download stalls, retry with a PyPI mirror.
+`npm run dev` / `npm start` run `scripts/ensure-setup.mjs` first (`predev` / `prestart`). That script:
 
-`dict:fetch` downloads the MIT-licensed [ECDICT](https://github.com/skywind3000/ECDICT) SQLite release into `data/stardict.db` (gitignored). Hover lookup never calls the LLM. Set `ECDICT_PATH` if the database lives somewhere else.
+- Copies `.env.example` → `.env.local` when missing (then fill in `LLM_API_KEY`)
+- Downloads [ECDICT](https://github.com/skywind3000/ECDICT) into `data/stardict.db` when missing (`npm run dict:fetch`)
+- Installs [Scrapling](https://scrapling.readthedocs.io/) from `requirements.txt` when Python is available and Scrapling is missing
+
+Already-present assets are skipped. Bypass with `SKIP_SETUP=1`, or partially with `SKIP_DICT=1` / `SKIP_SCRAPLING=1`. Run setup alone via `npm run setup`.
+
+Fetching a URL runs `scripts/scrapling_fetch.py`, which keeps every text block, including short lines and pages that separate paragraphs with `<br>`. If Python or Scrapling is missing, the app falls back to a single HTTP fetch plus Mozilla Readability. Set `PYTHON` when `python` is not on `PATH`. If the pip download stalls, retry with a PyPI mirror.
+
+Hover lookup never calls the LLM. Set `ECDICT_PATH` if the database lives somewhere else.
 
 Edit `.env.local`:
 
@@ -40,7 +46,7 @@ LLM_MODEL=gpt-4o-mini
 npm run dev
 ```
 
-Open [http://localhost:3010](http://localhost:3010).
+Open [http://localhost:3010](http://localhost:3010). First launch may take a few minutes while ECDICT downloads.
 
 Typical flow:
 
