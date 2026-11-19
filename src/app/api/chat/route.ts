@@ -1,5 +1,5 @@
 import { streamCoachAgent } from "@/lib/agent/run";
-import type { ViewLens } from "@/lib/types";
+import type { AppRoute, ViewLens } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,6 +12,7 @@ export async function POST(request: Request) {
       selectedParagraphIndex: number | null;
       viewLens: ViewLens;
       translateOpen: boolean;
+      route?: AppRoute;
     };
   };
 
@@ -35,6 +36,7 @@ export async function POST(request: Request) {
             selectedParagraphIndex: null,
             viewLens: "read",
             translateOpen: false,
+            route: "practice",
           },
         })) {
           send(event);

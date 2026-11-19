@@ -1,4 +1,5 @@
 import { getChatModel } from "@/lib/agent/model";
+import { listDrills } from "@/lib/db";
 import {
   gradeLocally,
   gradeSummary,
@@ -42,7 +43,15 @@ export async function createDrill(
   const topic = extraTopic.trim().slice(0, 80);
   const focus = [label, topic].filter(Boolean).join("；") || "生活用语";
   const spec = drillLevelSpec(difficulty);
-  const model = getChatModel(false, "drill-create");
+  // Every call is stateless, so without help the model keeps returning the same sentence for the same tags.
+  // Show it what was asked recently, and push it toward a different situation each time.
+  const recent = listDrills(15).map((item) => item.zh);
+  const avoid = recent.length
+    ? `\nDo NOT repeat or paraphrase these earlier sentences:\n${recent.map((zh) => `- ${zh}`).join("\n")}`
+    : "";
+  const angles = ["a conversation between two people", "a short request or question", "something that just happened", "a plan for tomorrow", "an opinion or feeling", "an instruction or reminder", "a complaint or apology", "a piece of news"];
+  const angle = `\nThis time write ${angles[Math.floor(Math.random() * angles.length)]}.`;
+  const model = getChatModel(false, "drill-create", 0.9);
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
@@ -52,8 +61,8 @@ export async function createDrill(
           role: "user",
           content:
             attempt === 0
-              ? `Tags and topic: ${focus}\nDifficulty: ${spec.level}. ${spec.note}\nEnglish words: ${spec.min} to ${spec.max}.`
-              : `Tags and topic: ${focus}\nDifficulty: ${spec.level}. ${spec.note}\nThe previous reply did not contain ${spec.min} to ${spec.max} English words. Reply again with ${spec.min} to ${spec.max} words.`,
+              ? `Tags and topic: ${focus}\nDifficulty: ${spec.level}. ${spec.note}\nEnglish words: ${spec.min} to ${spec.max}.${angle}${avoid}`
+              : `Tags and topic: ${focus}\nDifficulty: ${spec.level}. ${spec.note}\nThe previous reply did not contain ${spec.min} to ${spec.max} English words. Reply again with ${spec.min} to ${spec.max} words.${angle}${avoid}`,
         },
       ]);
       return parseDrillPrompt(textOf(raw.content));

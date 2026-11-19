@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { ArrowUp, Eraser, PanelRightClose } from "lucide-react";
 import { Mascot, OwlMark } from "@/components/illustrations";
+import { throwText } from "@/components/TextThrow";
 import { Button } from "@/components/ui/button";
 import {
   AssistantRuntimeProvider,
   ComposerPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
+  useAuiState,
   useExternalStoreRuntime,
   type AppendMessage,
   type ThreadMessageLike,
@@ -21,6 +23,45 @@ function MarkdownText() {
   return <MarkdownTextPrimitive className="coach-md" smooth defer />;
 }
 
+function UserMessage() {
+  return (
+    <MessagePrimitive.Root className="pop-in flex justify-end">
+      <div className="max-w-[85%] rounded-2xl rounded-br-md bg-primary px-3.5 py-2 text-sm text-primary-foreground">
+        <MessagePrimitive.Parts />
+      </div>
+    </MessagePrimitive.Root>
+  );
+}
+
+function AssistantMessage() {
+  // While a reply is running the runtime adds its own empty assistant message; skip it until text arrives.
+  const hasText = useAuiState((s) =>
+    s.message.parts.some((part) => part.type === "text" && part.text.length > 0),
+  );
+  if (!hasText) return null;
+  return (
+    <MessagePrimitive.Root className="pop-in flex items-start gap-2.5">
+      <div aria-hidden className="grid size-8 shrink-0 place-items-center rounded-full bg-primary">
+        <OwlMark className="size-5" />
+      </div>
+      <div className="min-w-0 flex-1 rounded-2xl rounded-tl-md border bg-card px-3.5 py-2 text-sm leading-relaxed">
+        <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
+      </div>
+    </MessagePrimitive.Root>
+  );
+}
+
+const SUGGESTIONS = [
+  "找一篇今天能读完的短文",
+  "出一道生活用语的题",
+  "开始复习生词",
+  "打开学习总览",
+] as const;
+
+function askCoach(text: string) {
+  window.dispatchEvent(new CustomEvent("english-coach:send", { detail: { text } }));
+}
+
 function CoachThread() {
   const busy = useWorkspace((s) => s.busy);
   const statusMessage = useWorkspace((s) => s.statusMessage);
@@ -30,32 +71,28 @@ function CoachThread() {
         <ThreadPrimitive.Empty>
           <div className="my-auto flex flex-col items-center gap-3 text-center">
             <Mascot className="w-28" />
-            <p className="text-lg font-bold">今天练什么？</p>
-            <span className="text-sm text-muted-foreground">发一个链接，或让我找一篇英文文章。</span>
+            <p className="text-lg font-bold">想做什么，直接说</p>
+            <span className="max-w-[18rem] text-sm text-muted-foreground">
+              阅读、讲解、翻译、出题、生词、错题、文章库、统计和设置，我都能帮你做。
+            </span>
+            <div className="flex max-w-[18rem] flex-wrap justify-center gap-1.5">
+              {SUGGESTIONS.map((text) => (
+                <button
+                  key={text}
+                  type="button"
+                  onClick={() => askCoach(text)}
+                  className="rounded-full border bg-card px-2.5 py-1 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  {text}
+                </button>
+              ))}
+            </div>
           </div>
         </ThreadPrimitive.Empty>
         <ThreadPrimitive.Messages
           components={{
-            UserMessage: () => (
-              <MessagePrimitive.Root className="pop-in flex justify-end">
-                <div className="max-w-[85%] rounded-2xl rounded-br-md bg-primary px-3.5 py-2 text-sm text-primary-foreground">
-                  <MessagePrimitive.Parts />
-                </div>
-              </MessagePrimitive.Root>
-            ),
-            AssistantMessage: () => (
-              <MessagePrimitive.Root className="pop-in flex items-start gap-2.5">
-                <div
-                  aria-hidden
-                  className="grid size-8 shrink-0 place-items-center rounded-full bg-primary"
-                >
-                  <OwlMark className="size-5" />
-                </div>
-                <div className="min-w-0 flex-1 rounded-2xl rounded-tl-md border bg-card px-3.5 py-2 text-sm leading-relaxed">
-                  <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
-                </div>
-              </MessagePrimitive.Root>
-            ),
+            UserMessage,
+            AssistantMessage,
           }}
         />
         {busy ? (
@@ -71,7 +108,7 @@ function CoachThread() {
       </ThreadPrimitive.Viewport>
       <ComposerPrimitive.Root className="flex items-end gap-2 border-t p-3">
         <ComposerPrimitive.Input
-          placeholder="发消息"
+          placeholder="找文章、出题、复习、看统计…"
           rows={1}
           className="max-h-32 min-h-10 flex-1 resize-none rounded-xl border-2 bg-background px-3 py-2 text-sm outline-none transition-colors focus-visible:border-primary"
         />
@@ -121,6 +158,7 @@ export function ChatPanel() {
             selectedParagraphIndex: state.selectedParagraphIndex,
             viewLens: state.viewLens,
             translateOpen: state.translateOpen,
+            route: state.route,
           },
         }),
       });
@@ -163,7 +201,10 @@ export function ChatPanel() {
             }
           }
           if (event.type === "patches") {
-            for (const patch of event.patches) live.applyPatch(patch);
+            for (const patch of event.patches) {
+              live.applyPatch(patch);
+              if (patch.deliver) throwText(patch.deliver.target, patch.deliver.text);
+            }
           }
           if (event.type === "error") throw new Error(event.message);
         }
@@ -187,8 +228,14 @@ export function ChatPanel() {
     return () => window.removeEventListener("english-coach:send", handler);
   }, []);
 
+  // The empty assistant placeholder would render as a hollow bubble (two thin lines) until the first token.
+  const visibleMessages = useMemo(
+    () => messages.filter((message) => message.role !== "assistant" || message.content !== ""),
+    [messages],
+  );
+
   const runtime = useExternalStoreRuntime({
-    messages,
+    messages: visibleMessages,
     isRunning: busy,
     convertMessage: (message: ChatMessage): ThreadMessageLike => ({
       id: message.id,

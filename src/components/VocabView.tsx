@@ -10,8 +10,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { BookLoader } from "@/components/ui/loader";
+import { Pager, pageSlice } from "@/components/ui/pager";
 import { speak, useSpeech } from "@/lib/speech";
 import { useVocab } from "@/lib/store/vocab";
+import { useWorkspace } from "@/lib/store/workspace";
 import { formatInterval, schedule, stageOf, type Rating, type VocabSummary, type VocabWord } from "@/lib/vocab/srs";
 import { cn } from "@/lib/utils";
 
@@ -204,12 +207,15 @@ function ReviewSession({ initial, onExit }: { initial: VocabWord[]; onExit: () =
   );
 }
 
+const PAGE_SIZE = 10;
+
 export function VocabView() {
   const [tab, setTab] = useState<Tab>("review");
   const [words, setWords] = useState<VocabWord[]>([]);
   const [query, setQuery] = useState("");
   const [session, setSession] = useState<VocabWord[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const { total, due, mastered, apply } = useVocab();
 
@@ -239,6 +245,16 @@ export function VocabView() {
   useEffect(() => {
     void useVocab.getState().refresh().finally(() => setLoading(false));
   }, []);
+
+  const pageCommand = useWorkspace((s) => s.pageCommand);
+  useEffect(() => {
+    if (!pageCommand) return;
+    const vocab = pageCommand.vocab;
+    if (vocab?.tab) setTab(vocab.tab);
+    if (vocab?.query !== undefined) setQuery(vocab.query);
+    if (vocab?.startReview) void startReview();
+    else if (pageCommand.refresh?.includes("vocab") && tab === "all") void loadAll(vocab?.query ?? query);
+  }, [pageCommand]);
 
   async function startReview() {
     const res = await fetch("/api/vocab?view=due&limit=20", { cache: "no-store" });
@@ -345,12 +361,17 @@ export function VocabView() {
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
             <Input
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setPage(1);
+              }}
               placeholder="搜索单词或释义"
               className="h-10 rounded-xl border-2 pl-9"
             />
           </div>
-          {words.length === 0 && !loading ? (
+          {loading && words.length === 0 ? (
+            <BookLoader label="正在翻找生词" className="py-10" />
+          ) : words.length === 0 ? (
             query ? (
               <p className="py-8 text-center text-sm text-muted-foreground">没有匹配的词</p>
             ) : (
@@ -358,7 +379,7 @@ export function VocabView() {
             )
           ) : (
             <ul className="grid grid-cols-[minmax(0,1fr)] gap-2">
-              {words.map((w, i) => {
+              {pageSlice(words, page, PAGE_SIZE).map((w, i) => {
                 const stage = stageOf(w.box);
                 return (
                   <motion.li
@@ -406,6 +427,7 @@ export function VocabView() {
               })}
             </ul>
           )}
+          <Pager page={page} total={words.length} pageSize={PAGE_SIZE} onPageChange={setPage} />
         </div>
       )}
     </section>

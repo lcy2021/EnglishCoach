@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Lock, Trophy } from "lucide-react";
+import { Check } from "lucide-react";
 import { motion } from "motion/react";
 import { GoalRing } from "@/components/GoalRing";
-import { GOAL_CHOICES, achievements, weekCompare } from "@/lib/goals";
+import { GOAL_CHOICES, weekCompare } from "@/lib/goals";
 import { useGoal } from "@/lib/store/goal";
 import {
   CHART_COLORS,
@@ -16,12 +16,14 @@ import {
   formatCount,
 } from "@/components/charts";
 import { cn } from "@/lib/utils";
+import { useWorkspace } from "@/lib/store/workspace";
+import { BookLoader } from "@/components/ui/loader";
 
 export interface StatsPayload {
   days: DayPoint[];
   today: DayPoint;
   window: { input: number; output: number; calls: number; drills: number; perfect: number };
-  allTime: { drills: number; perfect: number; tokens: number; longestStreak: number; bestDay: number };
+  allTime: { drills: number; tokens: number };
   streakDays: number;
   bySource: Array<{ source: string; tokens: number; calls: number }>;
 }
@@ -48,6 +50,7 @@ const SOURCE_LABEL: Record<string, string> = {
   "generate-explain": "整篇讲解",
   "paragraph-explain": "段落讲解",
   "explain-selection": "选句讲解",
+  "fetch-clean": "Web搜索",
   other: "其他",
 };
 
@@ -142,53 +145,6 @@ function WeeklyReport() {
   );
 }
 
-function AchievementsCard({ records }: { records: StatsPayload["allTime"] }) {
-  const list = achievements(records);
-  const unlocked = list.filter((a) => a.unlocked).length;
-  return (
-    <div className="rounded-2xl border bg-card p-4 shadow-xs">
-      <div className="flex items-baseline justify-between">
-        <h2 className="text-base font-semibold">成就</h2>
-        <span className="text-sm text-muted-foreground tabular-nums">
-          {unlocked} / {list.length}
-        </span>
-      </div>
-      <ul className="mt-3 grid gap-2.5 sm:grid-cols-2">
-        {list.map((a) => (
-          <li
-            key={a.id}
-            className={cn(
-              "flex items-center gap-3 rounded-xl border px-3 py-2.5",
-              a.unlocked ? "border-primary/40 bg-accent/60" : "bg-muted/40",
-            )}
-          >
-            <span
-              className={cn(
-                "flex size-9 shrink-0 items-center justify-center rounded-full",
-                a.unlocked ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
-              )}
-            >
-              {a.unlocked ? <Trophy className="size-4.5" aria-hidden /> : <Lock className="size-4" aria-hidden />}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className={cn("block text-sm font-semibold", !a.unlocked && "text-muted-foreground")}>{a.title}</span>
-              <span className="block text-xs text-muted-foreground">
-                {a.hint}
-                {a.unlocked ? "" : ` · ${a.value}/${a.target}`}
-              </span>
-              {a.unlocked ? null : (
-                <span className="mt-1 block h-1 overflow-hidden rounded-full bg-muted">
-                  <span className="block h-full rounded-full bg-primary/60" style={{ width: `${(a.value / a.target) * 100}%` }} />
-                </span>
-              )}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
 export function StatsView() {
   const goal = useGoal((s) => s.goal);
   const setGoal = useGoal((s) => s.setGoal);
@@ -219,6 +175,12 @@ export function StatsView() {
       cancelled = true;
     };
   }, [range]);
+
+  const pageCommand = useWorkspace((s) => s.pageCommand);
+  useEffect(() => {
+    const days = pageCommand?.statsDays;
+    if (days === 7 || days === 14 || days === 30) setRange(days);
+  }, [pageCommand]);
 
   const today = stats?.today;
   const accuracy = today && today.drills > 0 ? Math.round((today.perfect / today.drills) * 100) : null;
@@ -316,7 +278,6 @@ export function StatsView() {
           </div>
 
           <WeeklyReport />
-          <AchievementsCard records={stats.allTime} />
 
           <ChartCard
             title="每日练习"
@@ -411,7 +372,7 @@ export function StatsView() {
           </ChartCard>
         </motion.div>
       ) : !error ? (
-        <p className="py-16 text-center text-sm text-muted-foreground">正在加载…</p>
+        <BookLoader label="正在统计学习数据" />
       ) : null}
     </section>
   );

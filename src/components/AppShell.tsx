@@ -7,6 +7,7 @@ import { useWorkspace, type AppRoute } from "@/lib/store/workspace";
 import { GoalRing } from "@/components/GoalRing";
 import { useGoal } from "@/lib/store/goal";
 import { OwlPet, pokeOwl } from "@/components/OwlPet";
+import { TextThrow } from "@/components/TextThrow";
 import { OwlMark } from "@/components/illustrations";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -20,7 +21,7 @@ import { SettingsView } from "@/components/SettingsView";
 import { VocabView } from "@/components/VocabView";
 import { useVocab } from "@/lib/store/vocab";
 import { useLevel } from "@/lib/store/level";
-import { useSpeech } from "@/lib/speech";
+import { useSpeech, type Accent } from "@/lib/speech";
 import { StatsView } from "@/components/StatsView";
 import { DrillView } from "@/components/DrillView";
 
@@ -109,6 +110,28 @@ export function AppShell() {
     void refreshVocab();
   }, [route, refreshVocab]);
 
+  const pageCommand = useWorkspace((s) => s.pageCommand);
+  useEffect(() => {
+    if (!pageCommand) return;
+    const settings = pageCommand.settings;
+    if (settings) {
+      if (settings.goal !== undefined) useGoal.getState().setGoal(settings.goal);
+      if (settings.level !== undefined) useLevel.getState().setLevel(settings.level);
+      if (settings.highlight !== undefined) useLevel.getState().setHighlight(settings.highlight);
+      const speech: { accent?: Accent; rate?: number; autoPlay?: boolean } = {};
+      if (settings.accent) speech.accent = settings.accent;
+      if (settings.rate !== undefined) speech.rate = settings.rate;
+      if (settings.autoPlay !== undefined) speech.autoPlay = settings.autoPlay;
+      if (Object.keys(speech).length > 0) useSpeech.getState().set(speech);
+    }
+    const commandId = pageCommand.id;
+    queueMicrotask(() => {
+      if (useWorkspace.getState().pageCommand?.id === commandId) {
+        useWorkspace.setState({ pageCommand: null });
+      }
+    });
+  }, [pageCommand]);
+
   return (
     <MotionConfig reducedMotion="user">
     <div className={chatOpen ? "app chat-open" : "app"}>
@@ -180,6 +203,7 @@ export function AppShell() {
           </div>
         </main>
         <OwlPet />
+        <TextThrow />
       </div>
 
       {chatOpen ? (

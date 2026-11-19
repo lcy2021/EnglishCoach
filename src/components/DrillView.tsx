@@ -5,11 +5,13 @@ import { Check, ChevronDown, ChevronUp, Flame, History, Lightbulb, Plus, SkipFor
 import { AnimatePresence, motion } from "motion/react";
 import { Confetti } from "@/components/Confetti";
 import { pokeOwl } from "@/components/OwlPet";
+import { throwText } from "@/components/TextThrow";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { useWorkspace } from "@/lib/store/workspace";
 import { DRILL_LEVELS, normalizeWord, type DrillLevel, type DrillListItem, type SavedDrill, type SlotGrade } from "@/lib/drill/parse";
 
 interface TagItem {
@@ -64,6 +66,13 @@ export function DrillView() {
     void loadHistory();
     void loadTags();
   }, []);
+
+  const pageCommand = useWorkspace((s) => s.pageCommand);
+  useEffect(() => {
+    if (!pageCommand) return;
+    if (pageCommand.drillId) void openDrill(pageCommand.drillId);
+    else if (pageCommand.refresh?.includes("drill")) void loadHistory();
+  }, [pageCommand]);
 
   function showDrill(drill: SavedDrill) {
     setDrillId(drill.id);
@@ -163,6 +172,7 @@ export function DrillView() {
         createdAt: data.createdAt,
       });
       pokeOwl("happy");
+      throwText("drill-question", data.zh);
       void loadHistory();
     } catch (caught) {
       pokeOwl("happy");
@@ -201,6 +211,7 @@ export function DrillView() {
       setStreak((n) => (hintCount === 0 && data.slots!.every((slot) => slot.status === "correct") ? n + 1 : 0));
       if (data.slots.every((slot) => slot.status === "correct")) pokeOwl("cheer");
       setSummary(data.summary ?? "");
+      throwText("drill-result", data.summary ?? "");
       void loadHistory();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "批改失败");
@@ -454,7 +465,7 @@ export function DrillView() {
           {allCorrect ? <Confetti /> : null}
           <Card className="border-2">
             <CardContent className="space-y-6 py-2">
-              <div className="space-y-2">
+              <div className="space-y-2" data-deliver="drill-question">
                 <p className="text-xs font-bold tracking-wide text-primary">把这句话翻成英文</p>
                 <p className="text-2xl leading-relaxed font-bold">{prompt.zh}</p>
               </div>
@@ -502,6 +513,7 @@ export function DrillView() {
 
               {grades ? (
                 <div
+                  data-deliver="drill-result"
                   className={cn(
                     "rounded-2xl px-4 py-3 text-sm",
                     allCorrect ? "bg-accent text-accent-foreground" : "bg-secondary text-secondary-foreground",
@@ -537,15 +549,6 @@ export function DrillView() {
                     <Button size="lg" variant="ghost" disabled={busy !== null} onClick={() => void createQuestion()}>
                       <SkipForward aria-hidden />
                       跳过这题
-                    </Button>
-                    <Button
-                      size="lg"
-                      variant="ghost"
-                      className="ml-auto text-muted-foreground"
-                      disabled={busy !== null}
-                      onClick={() => void submit()}
-                    >
-                      不会,看答案
                     </Button>
                   </>
                 )}

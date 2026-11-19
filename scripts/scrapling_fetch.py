@@ -56,6 +56,35 @@ def paragraphs_from_html(html: str) -> list[str]:
     return paragraphs
 
 
+def densest_block(html: str) -> list[str]:
+    """Fallback for pages with no recognisable article container.
+
+    Score every div/section/article by the prose in its own <p> children and keep the
+    winner. Menus and footers are lists of links, so they score near zero.
+    """
+    try:
+        from lxml import html as lxml_html
+
+        root = lxml_html.fromstring(html)
+    except Exception:
+        return []
+    best_node = None
+    best_score = 0
+    for node in root.iter("div", "section", "article", "main"):
+        score = 0
+        for child in node:
+            if child.tag == "p":
+                text = clean(child.text_content())
+                if len(text) >= 40:
+                    score += len(text)
+        if score > best_score:
+            best_score = score
+            best_node = node
+    if best_node is None or best_score < 400:
+        return []
+    return paragraphs_from_html(lxml_html.tostring(best_node, encoding="unicode"))
+
+
 def choose_paragraphs(page) -> list[str]:
     body: list[str] = []
     best: list[str] = []
@@ -78,6 +107,9 @@ def choose_paragraphs(page) -> list[str]:
     # A real article container beats the whole page, which still carries menus.
     if best_score >= 800:
         return best
+    dense = densest_block(str(getattr(page, "html_content", "") or ""))
+    if dense:
+        return dense
     return body or best
 
 

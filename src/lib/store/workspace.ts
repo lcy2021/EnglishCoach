@@ -2,14 +2,16 @@
 
 import { create } from "zustand";
 import type {
+  AppRoute,
   Article,
   ChatMessage,
   Extraction,
+  PageCommand,
   ViewLens,
   WorkspacePatch,
 } from "@/lib/types";
 
-export type AppRoute = "practice" | "drill" | "wrong-book" | "library" | "vocab" | "stats" | "settings";
+export type { AppRoute };
 
 interface WorkspaceState {
   route: AppRoute;
@@ -24,6 +26,7 @@ interface WorkspaceState {
   chatOpen: boolean;
   messages: ChatMessage[];
   busy: boolean;
+  pageCommand: PageCommand | null;
   setRoute: (route: AppRoute) => void;
   setChatOpen: (open: boolean) => void;
   setSelectedParagraph: (index: number | null) => void;
@@ -51,6 +54,7 @@ export const useWorkspace = create<WorkspaceState>((set) => ({
   chatOpen: true,
   messages: [],
   busy: false,
+  pageCommand: null,
   setRoute: (route) => set({ route }),
   setChatOpen: (chatOpen) => set({ chatOpen }),
   setSelectedParagraph: (selectedParagraphIndex) =>
@@ -83,6 +87,8 @@ export const useWorkspace = create<WorkspaceState>((set) => ({
         patch.statusMessage === undefined
           ? state.statusMessage
           : patch.statusMessage,
+      pageCommand:
+        patch.pageCommand === undefined ? state.pageCommand : patch.pageCommand,
     })),
   addMessage: (message) =>
     set((state) => ({ messages: [...state.messages, message] })),

@@ -11,6 +11,7 @@ export type UsageSource =
   | "generate-explain"
   | "explain-selection"
   | "paragraph-explain"
+  | "fetch-clean"
   | "other";
 
 interface TokenUsage {
@@ -45,7 +46,7 @@ function readUsage(result: LLMResult): { input: number; output: number } {
   return { input, output: out };
 }
 
-export function getChatModel(streaming = false, source: UsageSource = "other") {
+export function getChatModel(streaming = false, source: UsageSource = "other", temperature = 0.3) {
   const apiKey = process.env.LLM_API_KEY;
   if (!apiKey) {
     throw new Error("LLM_API_KEY is not set. Copy .env.example to .env.local.");
@@ -54,7 +55,7 @@ export function getChatModel(streaming = false, source: UsageSource = "other") {
   return new ChatOpenAI({
     apiKey,
     model: modelName,
-    temperature: 0.3,
+    temperature,
     streaming,
     streamUsage: true,
     configuration: {

@@ -125,11 +125,6 @@ export function getDb(): Database.Database {
       status TEXT NOT NULL DEFAULT 'unset',
       FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE
     );
-    CREATE TABLE IF NOT EXISTS gloss_cache (
-      word_key TEXT PRIMARY KEY,
-      gloss_json TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
     CREATE TABLE IF NOT EXISTS wrong_items (
       id TEXT PRIMARY KEY,
       article_id TEXT NOT NULL,
@@ -416,23 +411,6 @@ export function listExtractions(articleId: string): Extraction[] {
        FROM extractions WHERE article_id = ?`,
     )
     .all(articleId) as Extraction[];
-}
-
-export function getGloss(wordKey: string): string | null {
-  const row = getDb()
-    .prepare(`SELECT gloss_json FROM gloss_cache WHERE word_key = ?`)
-    .get(wordKey) as { gloss_json: string } | undefined;
-  return row?.gloss_json ?? null;
-}
-
-export function setGloss(wordKey: string, glossJson: string): void {
-  getDb()
-    .prepare(
-      `INSERT INTO gloss_cache (word_key, gloss_json, updated_at)
-       VALUES (?, ?, ?)
-       ON CONFLICT(word_key) DO UPDATE SET gloss_json=excluded.gloss_json, updated_at=excluded.updated_at`,
-    )
-    .run(wordKey, glossJson, nowIso());
 }
 
 export function addWrongItem(input: Omit<WrongBookItem, "createdAt" | "resolvedAt"> & {

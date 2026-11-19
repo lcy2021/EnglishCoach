@@ -19,6 +19,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { BookLoader } from "@/components/ui/loader";
+import { Pager, pageSlice } from "@/components/ui/pager";
+
+const PAGE_SIZE = 8;
 
 interface ArticleListItem {
   id: string;
@@ -36,6 +40,8 @@ function formatYmd(iso: string): string {
 
 export function LibraryView() {
   const [articles, setArticles] = useState<ArticleListItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
   const [deleteTarget, setDeleteTarget] = useState<ArticleListItem | null>(null);
   const openArticleId = useWorkspace((s) => s.article?.id ?? null);
   const loadArticle = useWorkspace((s) => s.loadArticle);
@@ -44,11 +50,26 @@ export function LibraryView() {
 
   useEffect(() => {
     void (async () => {
+      try {
+        const res = await fetch("/api/articles");
+        const data = (await res.json()) as { articles: ArticleListItem[] };
+        setArticles(data.articles ?? []);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const pageCommand = useWorkspace((s) => s.pageCommand);
+  useEffect(() => {
+    if (!pageCommand?.refresh?.includes("library")) return;
+    void (async () => {
       const res = await fetch("/api/articles");
       const data = (await res.json()) as { articles: ArticleListItem[] };
       setArticles(data.articles ?? []);
+      setLoading(false);
     })();
-  }, []);
+  }, [pageCommand]);
 
   async function openArticle(id: string) {
     const res = await fetch(`/api/articles?id=${id}`);
@@ -89,7 +110,9 @@ export function LibraryView() {
         <h1 className="text-3xl font-bold tracking-tight">文章库</h1>
         <p className="mt-1 text-muted-foreground">练过的文章都留在这里，点开继续。</p>
       </header>
-      {articles.length === 0 ? (
+      {loading ? (
+        <BookLoader label="正在翻找你的文章" />
+      ) : articles.length === 0 ? (
         <Empty className="rounded-2xl border-2 border-dashed">
           <EmptyHeader>
             <EmptyIllustration kind="library" className="w-32" />
@@ -99,7 +122,7 @@ export function LibraryView() {
         </Empty>
       ) : (
         <ul className="grid grid-cols-[minmax(0,1fr)] gap-3">
-          {articles.map((a, i) => (
+          {pageSlice(articles, page, PAGE_SIZE).map((a, i) => (
             <motion.li
               key={a.id}
               className="min-w-0"
@@ -131,6 +154,7 @@ export function LibraryView() {
           ))}
         </ul>
       )}
+      {!loading ? <Pager page={page} total={articles.length} pageSize={PAGE_SIZE} onPageChange={setPage} /> : null}
 
       <AlertDialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>

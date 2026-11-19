@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import {
-  getWrongItem,
   listWrongItems,
   resolveWrongItem,
 } from "@/lib/db";
@@ -26,13 +25,4 @@ export async function POST(request: Request) {
     return NextResponse.json({ item });
   }
   return NextResponse.json({ error: "Unknown action" }, { status: 400 });
-}
-
-export async function PUT(request: Request) {
-  const body = (await request.json()) as { id: string };
-  const item = getWrongItem(body.id);
-  if (!item) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-  return NextResponse.json({ item });
 }

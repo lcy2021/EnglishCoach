@@ -55,7 +55,7 @@ export interface Stats {
   days: DayPoint[];
   today: DayPoint;
   window: { input: number; output: number; calls: number; drills: number; perfect: number };
-  allTime: { drills: number; perfect: number; tokens: number; longestStreak: number; bestDay: number };
+  allTime: { drills: number; tokens: number };
   streakDays: number;
   bySource: SourceUsage[];
 }
@@ -150,28 +150,6 @@ export function getStats(windowDays: number): Stats {
     walk.setDate(walk.getDate() - 1);
   }
 
-  // All-time records, for achievements.
-  let allPerfect = 0;
-  let bestDay = 0;
-  const practiced: string[] = [];
-  for (const point of byDay.values()) {
-    allPerfect += point.perfect;
-    bestDay = Math.max(bestDay, point.drills);
-    if (point.drills > 0) practiced.push(point.date);
-  }
-  practiced.sort();
-  let longestStreak = 0;
-  let run = 0;
-  let prev: Date | null = null;
-  for (const key of practiced) {
-    const [y, m, d] = key.split("-").map(Number);
-    const current = new Date(y, m - 1, d);
-    const gap = prev ? Math.round((current.getTime() - prev.getTime()) / 86_400_000) : 0;
-    run = prev && gap === 1 ? run + 1 : 1;
-    longestStreak = Math.max(longestStreak, run);
-    prev = current;
-  }
-
   const window = days.reduce(
     (acc, day) => ({
       input: acc.input + day.input,
@@ -187,7 +165,7 @@ export function getStats(windowDays: number): Stats {
     days,
     today: days[days.length - 1],
     window,
-    allTime: { drills: allDrills, perfect: allPerfect, tokens: allTokens, longestStreak, bestDay },
+    allTime: { drills: allDrills, tokens: allTokens },
     streakDays,
     bySource: [...sourceTotals.values()].sort((a, b) => b.tokens - a.tokens),
   };

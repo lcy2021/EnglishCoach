@@ -7,13 +7,10 @@ import {
   type BaseMessage,
 } from "@langchain/core/messages";
 import { COACH_SYSTEM_PROMPT } from "@/lib/agent/prompts/coach";
-import {
-  createAgentSessionContext,
-  type AgentSessionContext,
-} from "@/lib/agent/context";
+import { createAgentSessionContext } from "@/lib/agent/context";
 import { getChatModel } from "@/lib/agent/model";
 import { buildCoachTools } from "@/lib/agent/tools";
-import type { ViewLens, WorkspacePatch } from "@/lib/types";
+import type { AppRoute, ViewLens, WorkspacePatch } from "@/lib/types";
 
 export interface RunCoachInput {
   messages: Array<{ role: "user" | "assistant"; content: string }>;
@@ -22,6 +19,7 @@ export interface RunCoachInput {
     selectedParagraphIndex: number | null;
     viewLens: ViewLens;
     translateOpen: boolean;
+    route?: AppRoute;
   };
 }
 
@@ -32,6 +30,16 @@ export type CoachStreamEvent =
   | { type: "done"; reply: string }
   | { type: "error"; message: string };
 
+/** What to show the moment a tool starts; tools can refine it through ctx.progress. */
+function startStatus(name: string, args: unknown): string {
+  const a = (args ?? {}) as { query?: string; paragraphIndex?: number };
+  if (name === "web_search" && a.query) return `正在搜索「${a.query.slice(0, 24)}」`;
+  if (name === "check_translation" && typeof a.paragraphIndex === "number") {
+    return `正在批改第 ${a.paragraphIndex + 1} 段的翻译`;
+  }
+  return TOOL_STATUS[name] ?? "正在处理";
+}
+
 const TOOL_STATUS: Record<string, string> = {
   web_search: "正在搜索网页",
   fetch_and_organize: "正在整理文章",
@@ -40,6 +48,19 @@ const TOOL_STATUS: Record<string, string> = {
   explain_selection: "正在解释这句话",
   open_article: "正在打开文章",
   open_wrong_item: "正在打开错题",
+  navigate: "正在打开页面",
+  list_library: "正在打开文章库",
+  delete_article: "正在删除文章",
+  create_drill: "正在出题",
+  list_drills: "正在打开出题",
+  open_drill: "正在打开题目",
+  grade_drill: "正在批改",
+  list_vocab: "正在打开生词本",
+  add_vocab: "正在加入生词",
+  review_vocab: "正在记录复习",
+  remove_vocab: "正在移除生词",
+  get_stats: "正在打开学习总览",
+  update_settings: "正在更新设置",
 };
 
 function chunkText(chunk: AIMessageChunk): string {
@@ -116,22 +137,42 @@ export async function* streamCoachAgent(
     }
 
     for (const call of toolCalls) {
-      yield {
-        type: "status",
-        text: TOOL_STATUS[call.name] ?? "正在处理",
-      };
+      yield { type: "status", text: startStatus(call.name, call.args) };
       const before = ctx.patches.length;
       const target = toolsByName.get(call.name);
-      let result: string;
-      try {
-        if (!target) throw new Error(`Unknown tool: ${call.name}`);
-        result = String(await target.invoke(call.args ?? {}));
-      } catch (error) {
-        result = JSON.stringify({
-          ok: false,
-          error: error instanceof Error ? error.message : String(error),
+
+      // Run the tool while relaying whatever it reports about its own progress.
+      const progress: string[] = [];
+      let wake = null as (() => void) | null;
+      ctx.progress = (text) => {
+        progress.push(text);
+        wake?.();
+      };
+      let finished = false;
+      let result = "";
+      const running = (async () => {
+        try {
+          if (!target) throw new Error(`Unknown tool: ${call.name}`);
+          result = String(await target.invoke(call.args ?? {}));
+        } catch (error) {
+          result = JSON.stringify({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        } finally {
+          finished = true;
+          wake?.();
+        }
+      })();
+      while (true) {
+        while (progress.length) yield { type: "status", text: progress.shift()! };
+        if (finished) break;
+        await new Promise<void>((resolve) => {
+          wake = resolve;
         });
       }
+      await running;
+      ctx.progress = undefined;
       if (ctx.patches.length > before) {
         yield { type: "patches", patches: ctx.patches.slice(before) };
       }

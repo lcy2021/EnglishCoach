@@ -9,22 +9,38 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { BookLoader } from "@/components/ui/loader";
+import { Pager, pageSlice } from "@/components/ui/pager";
 import type { WrongBookItem } from "@/lib/types";
 
+const PAGE_SIZE = 6;
+
 export function WrongBookView() {
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
   const [items, setItems] = useState<WrongBookItem[]>([]);
   const applyPatch = useWorkspace((s) => s.applyPatch);
   const setRoute = useWorkspace((s) => s.setRoute);
 
   async function reload() {
-    const res = await fetch("/api/wrong-book");
-    const data = (await res.json()) as { items: WrongBookItem[] };
-    setItems(data.items ?? []);
+    try {
+      const res = await fetch("/api/wrong-book");
+      const data = (await res.json()) as { items: WrongBookItem[] };
+      setItems(data.items ?? []);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
     void reload();
   }, []);
+
+  const pageCommand = useWorkspace((s) => s.pageCommand);
+  useEffect(() => {
+    if (!pageCommand?.refresh?.includes("wrong-book")) return;
+    void reload();
+  }, [pageCommand]);
 
   async function practiceAgain(item: WrongBookItem) {
     const articleRes = await fetch(`/api/articles?id=${item.articleId}`);
@@ -60,7 +76,9 @@ export function WrongBookView() {
         <h1 className="text-3xl font-bold tracking-tight">错题本</h1>
         <p className="mt-1 text-muted-foreground">翻译没过关、讲解里仍模糊的内容会回到这里。</p>
       </header>
-      {items.length === 0 ? (
+      {loading ? (
+        <BookLoader label="正在翻开错题本" />
+      ) : items.length === 0 ? (
         <Empty className="rounded-2xl border-2 border-dashed">
           <EmptyHeader>
             <EmptyIllustration kind="trophy" className="w-32" />
@@ -70,7 +88,7 @@ export function WrongBookView() {
         </Empty>
       ) : (
         <ul className="grid grid-cols-[minmax(0,1fr)] gap-3">
-          {items.map((item, i) => (
+          {pageSlice(items, page, PAGE_SIZE).map((item, i) => (
             <motion.li
               key={item.id}
               initial={{ opacity: 0, y: 14 }}
@@ -112,6 +130,7 @@ export function WrongBookView() {
           ))}
         </ul>
       )}
+      {!loading ? <Pager page={page} total={items.length} pageSize={PAGE_SIZE} onPageChange={setPage} /> : null}
     </section>
   );
 }

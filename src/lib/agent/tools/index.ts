@@ -22,7 +22,8 @@ import {
   organizePlainText,
 } from "@/lib/fetch/extract";
 import type { AgentSessionContext } from "@/lib/agent/context";
-import { pushPatch } from "@/lib/agent/context";
+import { buildPageTools } from "@/lib/agent/tools/pages";
+import { pushPatch, reportProgress } from "@/lib/agent/context";
 import { getChatModel } from "@/lib/agent/model";
 import { searchWeb } from "@/lib/agent/web-search";
 import type { Extraction, ViewLens } from "@/lib/types";
@@ -38,8 +39,9 @@ export function buildCoachTools(ctx: AgentSessionContext) {
   const fetch_and_organize = tool(
     async ({ url, text, title }) => {
       const extracted = url
-        ? await fetchAndExtract(url)
+        ? await fetchAndExtract(url, (text) => reportProgress(ctx, text))
         : organizePlainText(text ?? "", title || "Pasted text");
+      reportProgress(ctx, `正在保存《${title || extracted.title}》`);
       const article = saveArticle({
         id: randomUUID(),
         url: extracted.url,
@@ -53,6 +55,7 @@ export function buildCoachTools(ctx: AgentSessionContext) {
         translateOpen: false,
         explainExtractions: [],
         route: "practice",
+        deliver: { target: "article", text: article.paragraphs.map((p) => p.text).join("") },
         statusMessage: `已整理《${article.title}》（${article.paragraphs.length} 段）`,
       });
       return JSON.stringify({
@@ -201,6 +204,7 @@ export function buildCoachTools(ctx: AgentSessionContext) {
         throw new Error("No translation draft to check. Ask the user to write one.");
       }
 
+      reportProgress(ctx, "正在对照原文批改你的翻译");
       const model = getChatModel(false, "check-translation");
       const raw = await model.invoke([
         {
@@ -259,6 +263,7 @@ export function buildCoachTools(ctx: AgentSessionContext) {
 
       pushPatch(ctx, {
         translationFeedback: parsed.feedback,
+        deliver: { target: "translation-feedback", text: parsed.feedback },
         selectedParagraphIndex: index,
         translateOpen: true,
       });
@@ -287,6 +292,7 @@ export function buildCoachTools(ctx: AgentSessionContext) {
         (p) => p.index >= from && p.index <= to,
       );
 
+      reportProgress(ctx, `正在为 ${slice.length} 个段落生成讲解`);
       const model = getChatModel(false, "generate-explain");
       const raw = await model.invoke([
         {
@@ -353,10 +359,12 @@ export function buildCoachTools(ctx: AgentSessionContext) {
 
       saveExplainCache(articleId, payload, extractions);
       const refreshed = getArticle(articleId);
+      const listed = listExtractions(articleId);
       pushPatch(ctx, {
         article: refreshed,
         viewLens: "explain",
-        explainExtractions: listExtractions(articleId),
+        explainExtractions: listed,
+        deliver: { target: "explain", text: listed.map((item) => `${item.text}${item.gloss}`).join("") },
         statusMessage: "讲解已生成（中英对照 + 短语/生词）",
       });
 
@@ -437,6 +445,11 @@ export function buildCoachTools(ctx: AgentSessionContext) {
   const list_wrong_book = tool(
     async ({ unresolvedOnly }) => {
       const items = listWrongItems(unresolvedOnly ?? true);
+      pushPatch(ctx, {
+        route: "wrong-book",
+        statusMessage: "已打开复习",
+        pageCommand: { id: randomUUID(), route: "wrong-book", refresh: ["wrong-book"] },
+      });
       return JSON.stringify({
         count: items.length,
         items: items.slice(0, 20),
@@ -478,6 +491,11 @@ export function buildCoachTools(ctx: AgentSessionContext) {
     async ({ id }) => {
       const item = resolveWrongItem(id);
       if (!item) throw new Error("Wrong-book item not found.");
+      pushPatch(ctx, {
+        route: "wrong-book",
+        statusMessage: "已标记为掌握",
+        pageCommand: { id: randomUUID(), route: "wrong-book", refresh: ["wrong-book"] },
+      });
       return JSON.stringify({ ok: true, item });
     },
     {
@@ -498,6 +516,7 @@ export function buildCoachTools(ctx: AgentSessionContext) {
         selectedParagraphIndex: 0,
         viewLens: "read",
         explainExtractions: extractions,
+        deliver: { target: "article", text: article.paragraphs.map((p) => p.text).join("") },
       });
       return JSON.stringify({
         ok: true,
@@ -514,14 +533,16 @@ export function buildCoachTools(ctx: AgentSessionContext) {
 
   const web_search = tool(
     async ({ query }) => {
+      reportProgress(ctx, `正在联网搜索「${query.slice(0, 24)}」，稍等片刻`);
       const result = await searchWeb(query);
+      reportProgress(ctx, `找到 ${result.citations.length} 个来源，正在挑选文章`);
       pushPatch(ctx, { statusMessage: "已完成网页搜索" });
       return JSON.stringify(result);
     },
     {
       name: "web_search",
       description:
-        "Search the public web via Azure OpenAI web_search. Use this when the user asks to find an article or look up a current fact. For reading practice, pick one English article URL from citations and then call fetch_and_organize.",
+        "Search the public web (Tavily when configured, otherwise the model provider's hosted web_search). Use this when the user asks to find an article or look up a current fact. For reading practice, pick one English article URL from citations and then call fetch_and_organize.",
       schema: z.object({
         query: z
           .string()
@@ -538,6 +559,7 @@ export function buildCoachTools(ctx: AgentSessionContext) {
         articleId: ctx.articleId,
         title: article?.title ?? null,
         paragraphCount: article?.paragraphs.length ?? 0,
+        route: ctx.route,
         selectedParagraphIndex: ctx.selectedParagraphIndex,
         viewLens: ctx.viewLens,
         translateOpen: ctx.translateOpen,
@@ -572,5 +594,6 @@ export function buildCoachTools(ctx: AgentSessionContext) {
     resolve_wrong_item,
     open_article,
     get_workspace_snapshot,
+    ...buildPageTools(ctx),
   ];
 }

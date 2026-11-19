@@ -16,6 +16,7 @@ import {
 import { useWorkspace } from "@/lib/store/workspace";
 import { GlossableText } from "@/components/HoverWord";
 import { pokeOwl } from "@/components/OwlPet";
+import { throwText } from "@/components/TextThrow";
 import { speak as speakAloud, speechSupported, stopSpeaking } from "@/lib/speech";
 import { SaveWordButton } from "@/components/SaveWordButton";
 import { ArticleLevel } from "@/components/ArticleLevel";
@@ -142,6 +143,7 @@ export function ReaderView() {
         translateOpen: false,
         statusMessage: `已拉取《${data.article.title}》`,
       });
+      throwText("article", (data.article.paragraphs as Array<{ text: string }>).map((p) => p.text).join(""));
       const removed = Number(data.removed) || 0;
       pokeOwl("cheer", removed > 0 ? `拉取完成,帮你清掉了 ${removed} 行网页杂质` : "拉取完成,开始读吧!");
     } catch (error) {
@@ -352,7 +354,7 @@ export function ReaderView() {
         </div>
       </header>
 
-      <div className="prose">
+      <div className="prose" data-deliver="article">
         {article.paragraphs.map((p) => {
           const active = selected === p.index;
           return (
@@ -402,7 +404,7 @@ export function ReaderView() {
 
               {viewLens === "explain" &&
               extractions.some((item) => item.paragraphIndex === p.index) ? (
-                <ul className="para-gloss">
+                <ul className="para-gloss" data-deliver="explain">
                   {extractions
                     .filter((item) => item.paragraphIndex === p.index)
                     .map((item) => (
@@ -443,7 +445,7 @@ export function ReaderView() {
                     </Button>
                   </div>
                   {feedback ? (
-                    <p className="mt-3 rounded-xl bg-accent px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap text-accent-foreground">
+                    <p data-deliver="translation-feedback" className="mt-3 rounded-xl bg-accent px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap text-accent-foreground">
                       {feedback}
                     </p>
                   ) : null}

@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { Readability } from "@mozilla/readability";
 import { JSDOM } from "jsdom";
+import { aiSelectBody } from "@/lib/fetch/ai-tidy";
 import { cleanParagraphs } from "@/lib/fetch/clean";
 
 export interface ExtractedArticle {
@@ -141,22 +142,38 @@ function fetchWithScrapling(url: string): Promise<ExtractedArticle> {
   });
 }
 
-/** Drop breadcrumbs, contact blocks, share buttons and footers from a fetched page. */
-function tidy(article: ExtractedArticle): ExtractedArticle {
-  const { paragraphs, removed } = cleanParagraphs(article.paragraphs, article.title);
-  return { ...article, paragraphs, textContent: paragraphs.join("\n\n"), removed: removed.length };
+/**
+ * Drop menus, share buttons, related links and footers from a fetched page.
+ * Cheap rules run first; then the model picks the real article blocks from what is left.
+ * If the model is off or answers badly, the rule-based result stands.
+ */
+async function tidy(
+  article: ExtractedArticle,
+  onProgress?: (text: string) => void,
+): Promise<ExtractedArticle> {
+  const ruled = cleanParagraphs(article.paragraphs, article.title);
+  onProgress?.(`正在梳理正文（${ruled.paragraphs.length} 块）`);
+  const ai = await aiSelectBody(article.title, ruled.paragraphs);
+  const paragraphs = ai?.paragraphs ?? ruled.paragraphs;
+  const removed = article.paragraphs.length - paragraphs.length;
+  return { ...article, paragraphs, textContent: paragraphs.join("\n\n"), removed };
 }
 
-export async function fetchAndExtract(url: string): Promise<ExtractedArticle> {
+export async function fetchAndExtract(
+  url: string,
+  onProgress?: (text: string) => void,
+): Promise<ExtractedArticle> {
   const parsed = new URL(url);
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new Error("只能拉取 http 或 https 链接");
   }
   try {
-    return tidy(await fetchWithScrapling(url));
+    onProgress?.(`正在抓取 ${parsed.hostname}`);
+    return await tidy(await fetchWithScrapling(url), onProgress);
   } catch (scraplingError) {
     try {
-      return tidy(await fetchWithReadability(url));
+      onProgress?.("换个方式再抓一次");
+      return await tidy(await fetchWithReadability(url), onProgress);
     } catch {
       throw scraplingError instanceof Error ? scraplingError : new Error("拉取失败");
     }
