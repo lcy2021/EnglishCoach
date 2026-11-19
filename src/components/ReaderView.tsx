@@ -464,7 +464,7 @@ export function ReaderView() {
           </div>
           <div className="flex gap-2">
             <Button variant="ghost" onClick={() => setRoute("library")}>
-              回文章库
+              回资产
             </Button>
             <Button onClick={() => setRoute("drill")}>
               去出题

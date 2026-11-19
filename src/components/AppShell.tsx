@@ -1,6 +1,18 @@
 "use client";
 
-import { BookMarked, BookOpen, LayoutDashboard, Library, PanelRightOpen, RotateCcw, Settings, SpellCheck } from "lucide-react";
+import {
+  BookMarked,
+  BookOpen,
+  ChevronDown,
+  FileText,
+  LayoutDashboard,
+  Library,
+  ListChecks,
+  PanelRightOpen,
+  RotateCcw,
+  Settings,
+  SpellCheck,
+} from "lucide-react";
 import { motion, MotionConfig } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { useWorkspace, type AppRoute } from "@/lib/store/workspace";
@@ -17,6 +29,7 @@ import { ChatPanel } from "@/components/ChatPanel";
 import { ReaderView } from "@/components/ReaderView";
 import { WrongBookView } from "@/components/WrongBookView";
 import { LibraryView } from "@/components/LibraryView";
+import { DrillBankView } from "@/components/DrillBankView";
 import { SettingsView } from "@/components/SettingsView";
 import { VocabView } from "@/components/VocabView";
 import { useVocab } from "@/lib/store/vocab";
@@ -25,14 +38,35 @@ import { useSpeech, type Accent } from "@/lib/speech";
 import { StatsView } from "@/components/StatsView";
 import { DrillView } from "@/components/DrillView";
 
-const NAV: ReadonlyArray<readonly [AppRoute, string, typeof BookOpen]> = [
-  ["practice", "文章阅读", BookOpen],
-  ["drill", "AI出题", SpellCheck],
-  ["vocab", "生词本", BookMarked],
-  ["wrong-book", "复习", RotateCcw],
-  ["library", "文章库", Library],
-  ["stats", "总览", LayoutDashboard],
-  ["settings", "设置", Settings],
+const BANK_ROUTES = ["library", "drill-bank"] as const satisfies readonly AppRoute[];
+
+type NavLeaf = { kind: "leaf"; route: AppRoute; label: string; Icon: typeof BookOpen };
+type NavGroup = {
+  kind: "group";
+  id: string;
+  label: string;
+  Icon: typeof BookOpen;
+  children: ReadonlyArray<{ route: AppRoute; label: string; Icon: typeof BookOpen }>;
+};
+type NavItem = NavLeaf | NavGroup;
+
+const NAV: ReadonlyArray<NavItem> = [
+  { kind: "leaf", route: "practice", label: "文章阅读", Icon: BookOpen },
+  { kind: "leaf", route: "drill", label: "AI出题", Icon: SpellCheck },
+  { kind: "leaf", route: "vocab", label: "生词本", Icon: BookMarked },
+  { kind: "leaf", route: "wrong-book", label: "复习", Icon: RotateCcw },
+  {
+    kind: "group",
+    id: "bank",
+    label: "资产",
+    Icon: Library,
+    children: [
+      { route: "library", label: "文章", Icon: FileText },
+      { route: "drill-bank", label: "题目", Icon: ListChecks },
+    ],
+  },
+  { kind: "leaf", route: "stats", label: "总览", Icon: LayoutDashboard },
+  { kind: "leaf", route: "settings", label: "设置", Icon: Settings },
 ];
 
 /** Small "today" card at the bottom of the sidebar: questions done + tokens spent. */
@@ -92,6 +126,62 @@ function TodayCard() {
   );
 }
 
+function NavButton({
+  route,
+  label,
+  Icon,
+  active,
+  nested,
+  badge,
+  onClick,
+}: {
+  route: AppRoute;
+  label: string;
+  Icon: typeof BookOpen;
+  active: boolean;
+  nested?: boolean;
+  badge?: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-current={active ? "page" : undefined}
+      onClick={onClick}
+      className={cn(
+        "group relative flex items-center gap-3 rounded-xl border-2 border-transparent text-left text-sm font-semibold whitespace-nowrap transition-colors",
+        nested ? "px-3 py-2" : "px-3 py-2.5",
+        active ? "text-accent-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
+      )}
+    >
+      {active ? (
+        <motion.span
+          layoutId="nav-pill"
+          className="absolute inset-0 rounded-xl border-2 border-primary/40 bg-accent"
+          transition={{ type: "spring", stiffness: 420, damping: 34 }}
+        />
+      ) : null}
+      <motion.span className="relative flex items-center gap-3" whileHover={{ x: 3 }} whileTap={{ scale: 0.96 }}>
+        <Icon
+          className={cn(
+            "shrink-0 transition-transform group-hover:scale-110",
+            nested ? "size-4" : "size-5",
+            active && "text-primary",
+          )}
+          strokeWidth={2}
+          aria-hidden
+        />
+        {label}
+        {route === "vocab" && badge && badge > 0 ? (
+          <span className="ml-1 rounded-full bg-primary px-1.5 py-0.5 text-[11px] leading-none font-bold text-primary-foreground">
+            {badge}
+          </span>
+        ) : null}
+      </motion.span>
+    </button>
+  );
+}
+
 export function AppShell() {
   const route = useWorkspace((s) => s.route);
   const chatOpen = useWorkspace((s) => s.chatOpen);
@@ -99,6 +189,12 @@ export function AppShell() {
   const setChatOpen = useWorkspace((s) => s.setChatOpen);
   const dueWords = useVocab((s) => s.due);
   const refreshVocab = useVocab((s) => s.refresh);
+  const bankActive = (BANK_ROUTES as readonly string[]).includes(route);
+  const [bankOpen, setBankOpen] = useState(bankActive);
+
+  useEffect(() => {
+    if (bankActive) setBankOpen(true);
+  }, [bankActive]);
 
   useEffect(() => {
     useLevel.getState().hydrate();
@@ -145,45 +241,69 @@ export function AppShell() {
           </div>
           <span className="text-lg font-bold tracking-tight text-foreground">English Coach</span>
         </div>
-        <nav className="flex flex-col gap-1.5">
-          {NAV.map(([key, label, Icon]) => {
-            const active = route === key;
+        <nav className="rail-nav flex flex-col gap-1.5">
+          {NAV.map((item) => {
+            if (item.kind === "leaf") {
+              return (
+                <NavButton
+                  key={item.route}
+                  route={item.route}
+                  label={item.label}
+                  Icon={item.Icon}
+                  active={route === item.route}
+                  badge={dueWords}
+                  onClick={() => setRoute(item.route)}
+                />
+              );
+            }
+            const GroupIcon = item.Icon;
             return (
-              <button
-                key={key}
-                type="button"
-                aria-current={active ? "page" : undefined}
-                onClick={() => setRoute(key)}
-                className={cn(
-                  "group relative flex items-center gap-3 rounded-xl border-2 border-transparent px-3 py-2.5 text-left text-sm font-semibold whitespace-nowrap transition-colors",
-                  active ? "text-accent-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                )}
-              >
-                {active ? (
-                  <motion.span
-                    layoutId="nav-pill"
-                    className="absolute inset-0 rounded-xl border-2 border-primary/40 bg-accent"
-                    transition={{ type: "spring", stiffness: 420, damping: 34 }}
-                  />
-                ) : null}
-                <motion.span
-                  className="relative flex items-center gap-3"
-                  whileHover={{ x: 3 }}
-                  whileTap={{ scale: 0.96 }}
+              <div key={item.id} className="rail-group">
+                <button
+                  type="button"
+                  aria-expanded={bankOpen}
+                  onClick={() => {
+                    if (!bankOpen) {
+                      setBankOpen(true);
+                      if (!bankActive) setRoute("library");
+                      return;
+                    }
+                    setBankOpen(false);
+                  }}
+                  className={cn(
+                    "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold whitespace-nowrap transition-colors",
+                    bankActive
+                      ? "text-foreground"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  )}
                 >
-                  <Icon
-                    className={cn("size-5 shrink-0 transition-transform group-hover:scale-110", active && "text-primary")}
+                  <GroupIcon
+                    className={cn("size-5 shrink-0", bankActive && "text-primary")}
                     strokeWidth={2}
                     aria-hidden
                   />
-                  {label}
-                  {key === "vocab" && dueWords > 0 ? (
-                    <span className="ml-1 rounded-full bg-primary px-1.5 py-0.5 text-[11px] leading-none font-bold text-primary-foreground">
-                      {dueWords}
-                    </span>
-                  ) : null}
-                </motion.span>
-              </button>
+                  <span>{item.label}</span>
+                  <ChevronDown
+                    className={cn("size-4 transition-transform", bankOpen && "rotate-180")}
+                    aria-hidden
+                  />
+                </button>
+                {bankOpen ? (
+                  <div className="rail-group__kids">
+                    {item.children.map((child) => (
+                      <NavButton
+                        key={child.route}
+                        route={child.route}
+                        label={child.label}
+                        Icon={child.Icon}
+                        active={route === child.route}
+                        nested
+                        onClick={() => setRoute(child.route)}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+              </div>
             );
           })}
         </nav>
@@ -198,6 +318,7 @@ export function AppShell() {
             {route === "wrong-book" ? <WrongBookView /> : null}
             {route === "vocab" ? <VocabView /> : null}
             {route === "library" ? <LibraryView /> : null}
+            {route === "drill-bank" ? <DrillBankView /> : null}
             {route === "stats" ? <StatsView /> : null}
             {route === "settings" ? <SettingsView /> : null}
           </div>

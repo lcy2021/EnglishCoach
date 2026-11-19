@@ -2,10 +2,18 @@ export const DRILL_LEVELS = ["入门", "进阶", "较难"] as const;
 
 export type DrillLevel = (typeof DRILL_LEVELS)[number];
 
+export interface DrillLexItem {
+  kind: "phrase" | "word";
+  text: string;
+  gloss: string;
+}
+
 export interface DrillPrompt {
   zh: string;
   words: string[];
   end: "." | "?" | "!";
+  /** Key phrases and words for the sentence, shown under the blanks. */
+  lex: DrillLexItem[];
 }
 
 /** Word-count band and the instruction the model sees for that band. */
@@ -41,6 +49,7 @@ export interface SavedDrill {
   zh: string;
   words: string[];
   end: "." | "?" | "!";
+  lex: DrillLexItem[];
   attempt: string[] | null;
   grades: SlotGrade[] | null;
   summary: string;
@@ -81,6 +90,25 @@ function readJson(raw: string): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
+function readLexList(value: unknown, kind: DrillLexItem["kind"], limit: number): DrillLexItem[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const items: DrillLexItem[] = [];
+  for (const row of value) {
+    if (!row || typeof row !== "object") continue;
+    const text = typeof (row as { text?: unknown }).text === "string" ? (row as { text: string }).text.trim() : "";
+    const gloss =
+      typeof (row as { gloss?: unknown }).gloss === "string" ? (row as { gloss: string }).gloss.trim() : "";
+    if (!text || !gloss) continue;
+    const key = text.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push({ kind, text, gloss });
+    if (items.length >= limit) break;
+  }
+  return items;
+}
+
 /** Pull one Chinese sentence and the English word list out of a model reply. */
 export function parseDrillPrompt(raw: string): DrillPrompt {
   const body = readJson(raw);
@@ -96,7 +124,12 @@ export function parseDrillPrompt(raw: string): DrillPrompt {
     throw new Error("出题的词数不合适");
   }
   const end = body.end === "?" || body.end === "!" ? body.end : ".";
-  return { zh, words, end };
+  const phrases = readLexList(body.phrases, "phrase", 4);
+  const vocab = readLexList(body.vocab, "word", 6);
+  // Prefer phrases first, then words; drop word rows that duplicate a phrase.
+  const phraseKeys = new Set(phrases.map((item) => item.text.toLowerCase()));
+  const lex = [...phrases, ...vocab.filter((item) => !phraseKeys.has(item.text.toLowerCase()))];
+  return { zh, words, end, lex };
 }
 
 /** Mark each blank against the reference. Same word is correct; anything else is wrong. */

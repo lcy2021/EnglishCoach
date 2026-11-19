@@ -28,6 +28,8 @@ function welcome(route: AppRoute, hasArticle: boolean): string {
       return "复习错题,越练越牢~";
     case "library":
       return "选一篇文章继续读吧";
+    case "drill-bank":
+      return "做过的题都在这儿,点开重做吧";
     case "vocab": {
       const due = useVocab.getState().due;
       return due > 0 ? `有 ${due} 个词该复习啦` : "读文章时收藏的词都在这儿";

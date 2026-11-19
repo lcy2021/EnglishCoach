@@ -1,18 +1,20 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, ChevronUp, Flame, History, Lightbulb, Plus, SkipForward, SlidersHorizontal, Sparkles, X } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Flame, Lightbulb, ListChecks, Plus, SkipForward, SlidersHorizontal, Sparkles, Square, Volume2, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { Confetti } from "@/components/Confetti";
 import { pokeOwl } from "@/components/OwlPet";
+import { SaveWordButton } from "@/components/SaveWordButton";
 import { throwText } from "@/components/TextThrow";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { speak as speakAloud, speechSupported, stopSpeaking } from "@/lib/speech";
 import { useWorkspace } from "@/lib/store/workspace";
-import { DRILL_LEVELS, normalizeWord, type DrillLevel, type DrillListItem, type SavedDrill, type SlotGrade } from "@/lib/drill/parse";
+import { DRILL_LEVELS, normalizeWord, type DrillLevel, type SavedDrill, type SlotGrade } from "@/lib/drill/parse";
 
 interface TagItem {
   id: string;
@@ -30,23 +32,17 @@ export function DrillView() {
   const [attempt, setAttempt] = useState<string[]>([]);
   const [grades, setGrades] = useState<SlotGrade[] | null>(null);
   const [summary, setSummary] = useState("");
-  const [history, setHistory] = useState<DrillListItem[]>([]);
   const [busy, setBusy] = useState<"create" | "grade" | null>(null);
   const [error, setError] = useState("");
   const [showSettings, setShowSettings] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
   const [sessionDone, setSessionDone] = useState(0);
+  const setRoute = useWorkspace((s) => s.setRoute);
   const [streak, setStreak] = useState(0);
   const [hints, setHints] = useState<number[]>([]);
   const [hintCount, setHintCount] = useState(0);
   const [activeSlot, setActiveSlot] = useState(0);
+  const [speaking, setSpeaking] = useState(false);
   const inputs = useRef<Array<HTMLInputElement | null>>([]);
-
-  async function loadHistory() {
-    const res = await fetch("/api/drill");
-    const data = (await res.json()) as { drills?: DrillListItem[] };
-    setHistory(data.drills ?? []);
-  }
 
   async function loadTags() {
     const res = await fetch("/api/drill-tags");
@@ -63,18 +59,41 @@ export function DrillView() {
   }
 
   useEffect(() => {
-    void loadHistory();
     void loadTags();
+    return () => stopSpeaking();
   }, []);
 
   const pageCommand = useWorkspace((s) => s.pageCommand);
   useEffect(() => {
-    if (!pageCommand) return;
-    if (pageCommand.drillId) void openDrill(pageCommand.drillId);
-    else if (pageCommand.refresh?.includes("drill")) void loadHistory();
+    if (!pageCommand?.drillId) return;
+    void openDrill(pageCommand.drillId);
   }, [pageCommand]);
 
+  function englishSentence(drill: Pick<SavedDrill, "words" | "end">): string {
+    return `${drill.words.join(" ")}${drill.end}`;
+  }
+
+  function speakSentence(drill: Pick<SavedDrill, "words" | "end">) {
+    if (!speechSupported()) return;
+    setSpeaking(true);
+    const ok = speakAloud(englishSentence(drill), {
+      onEnd: () => setSpeaking(false),
+    });
+    if (!ok) setSpeaking(false);
+  }
+
+  function toggleSpeak(drill: Pick<SavedDrill, "words" | "end">) {
+    if (speaking) {
+      stopSpeaking();
+      setSpeaking(false);
+      return;
+    }
+    speakSentence(drill);
+  }
+
   function showDrill(drill: SavedDrill) {
+    stopSpeaking();
+    setSpeaking(false);
     setDrillId(drill.id);
     setPrompt(drill);
     setAttempt(drill.attempt ?? drill.words.map(() => ""));
@@ -85,6 +104,8 @@ export function DrillView() {
     setSummary(drill.summary);
     setError("");
     if (!drill.grades) {
+      // Hear the English first, then fill the blanks.
+      speakSentence(drill);
       requestAnimationFrame(() => inputs.current[0]?.focus());
     }
   }
@@ -166,6 +187,7 @@ export function DrillView() {
         zh: data.zh,
         words: data.words,
         end: data.end === "?" || data.end === "!" ? data.end : ".",
+        lex: data.lex ?? [],
         attempt: null,
         grades: null,
         summary: "",
@@ -173,7 +195,6 @@ export function DrillView() {
       });
       pokeOwl("happy");
       throwText("drill-question", data.zh);
-      void loadHistory();
     } catch (caught) {
       pokeOwl("happy");
       setPrompt(null);
@@ -212,7 +233,7 @@ export function DrillView() {
       if (data.slots.every((slot) => slot.status === "correct")) pokeOwl("cheer");
       setSummary(data.summary ?? "");
       throwText("drill-result", data.summary ?? "");
-      void loadHistory();
+      speakSentence(prompt);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "批改失败");
     } finally {
@@ -466,13 +487,27 @@ export function DrillView() {
           <Card className="border-2">
             <CardContent className="space-y-6 py-2">
               <div className="space-y-2" data-deliver="drill-question">
-                <p className="text-xs font-bold tracking-wide text-primary">把这句话翻成英文</p>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-bold tracking-wide text-primary">把这句话翻成英文</p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="h-8 gap-1.5"
+                    onClick={() => toggleSpeak(prompt)}
+                  >
+                    {speaking ? <Square className="size-3.5" aria-hidden /> : <Volume2 className="size-3.5" aria-hidden />}
+                    {speaking ? "停止" : "先听朗读"}
+                  </Button>
+                </div>
                 <p className="text-2xl leading-relaxed font-bold">{prompt.zh}</p>
               </div>
               <div className="drill-line" role="group" aria-label="英文翻译">
                 {prompt.words.map((word, index) => {
                   const grade = grades?.[index];
-                  const status = grade?.status ?? "";
+                  const liveCorrect =
+                    !grade && normalizeWord(attempt[index] ?? "") === normalizeWord(word);
+                  const status = grade?.status ?? (liveCorrect ? "correct" : "");
                   return (
                     <label className="drill-slot" key={`${prompt.zh}-${index}`}>
                       <span className="drill-field">
@@ -553,55 +588,45 @@ export function DrillView() {
                   </>
                 )}
               </div>
+
+              {grades && prompt.lex.length > 0 ? (
+                <aside className="rounded-2xl border bg-muted/40 px-4 py-3">
+                  <h3 className="mb-2 flex items-center gap-2 text-sm font-bold">
+                    短语和生词
+                    <Badge variant="secondary">{prompt.lex.length}</Badge>
+                  </h3>
+                  <ul className="divide-y">
+                    {prompt.lex.map((item) => (
+                      <li key={`${item.kind}-${item.text}`} className="flex items-start gap-3 py-2">
+                        <Badge variant={item.kind === "phrase" ? "secondary" : "default"} className="mt-0.5">
+                          {item.kind === "phrase" ? "短语" : "生词"}
+                        </Badge>
+                        <div className="min-w-0 flex-1 text-sm">
+                          <b className="font-semibold">{item.text}</b>
+                          <span className="ml-2 text-muted-foreground">{item.gloss}</span>
+                        </div>
+                        <SaveWordButton
+                          text={item.text}
+                          gloss={item.gloss}
+                          sentence={englishSentence(prompt)}
+                          source="drill"
+                          className="ml-auto"
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </aside>
+              ) : null}
             </CardContent>
           </Card>
         </motion.div>
       ) : null}
 
-      <div className="space-y-3 pt-2">
-        <button
-          type="button"
-          onClick={() => setShowHistory((v) => !v)}
-          aria-expanded={showHistory}
-          className="inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground"
-        >
-          <History className="size-4" aria-hidden />
-          做过的题{history.length > 0 ? `(${history.length})` : ""}
-          <ChevronDown className={cn("size-4 transition-transform", showHistory && "rotate-180")} aria-hidden />
-        </button>
-        {showHistory ? (
-          history.length === 0 ? (
-            <p className="text-sm text-muted-foreground">做过的题会留在这里,随时可以点开重做。</p>
-          ) : (
-            <ul className="grid grid-cols-[minmax(0,1fr)] gap-2">
-              {history.map((item, i) => (
-                <motion.li
-                  key={item.id}
-                  className="min-w-0"
-                  initial={{ opacity: 0, x: -12 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: Math.min(i, 8) * 0.04 }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => void openDrill(item.id)}
-                    className={cn(
-                      "flex w-full flex-col gap-1.5 rounded-2xl border-2 bg-card px-4 py-3 text-left transition-colors hover:bg-muted",
-                      item.id === drillId && "border-primary bg-accent/50",
-                    )}
-                  >
-                    <span className="truncate font-semibold">{item.zh}</span>
-                    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Badge variant="secondary">{item.industry}</Badge>
-                      <Badge variant="outline">{item.difficulty}</Badge>
-                      <Badge variant={item.graded ? "default" : "outline"}>{item.graded ? "已批改" : "未交卷"}</Badge>
-                    </span>
-                  </button>
-                </motion.li>
-              ))}
-            </ul>
-          )
-        ) : null}
+      <div className="pt-1">
+        <Button variant="ghost" className="gap-1.5 px-0 text-muted-foreground hover:text-foreground" onClick={() => setRoute("drill-bank")}>
+          <ListChecks className="size-4" aria-hidden />
+          去资产看做过的题
+        </Button>
       </div>
     </section>
   );

@@ -73,6 +73,7 @@ export async function POST(request: Request) {
         zh: prompt.zh,
         words: prompt.words,
         end: prompt.end,
+        lex: prompt.lex,
       });
       return NextResponse.json(saved);
     }
@@ -84,7 +85,7 @@ export async function POST(request: Request) {
       if (!zh || words.length < 4) {
         return NextResponse.json({ error: "题目不完整" }, { status: 400 });
       }
-      const prompt: DrillPrompt = { zh, words, end };
+      const prompt: DrillPrompt = { zh, words, end, lex: [] };
       const attempt = asWords(body.attempt);
       const result = await gradeDrill(prompt, attempt);
       const id = typeof body.id === "string" ? body.id : "";

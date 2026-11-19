@@ -163,6 +163,21 @@ body {
   border-right: 1px solid var(--line);
 }
 
+.rail-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rail-group__kids {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-left: 12px;
+  padding-left: 8px;
+  border-left: 2px solid color-mix(in oklab, var(--border) 70%, transparent);
+}
+
 .nav {
   display: flex;
   flex-direction: column;
@@ -202,7 +217,10 @@ body {
   min-height: 0;
   height: 100%;
   overflow: auto;
-  padding: 56px 48px 88px;
+  /* Bottom padding kept small so short pages don't grow a fake scrollbar.
+     Owl clearance uses scroll-padding instead of layout padding. */
+  padding: 56px 48px 28px;
+  scroll-padding-bottom: 88px;
 }
 
 .sheet {
@@ -210,13 +228,13 @@ body {
   margin: 0 auto;
   background: transparent;
   border-radius: 0;
-  padding: 4px 0 64px;
+  padding: 4px 0 8px;
   box-shadow: none;
-  animation: rise 220ms var(--ease-out) both;
+  animation: fade-in 220ms var(--ease-out) both;
 }
 
 .stage-view {
-  animation: rise 200ms var(--ease-out) both;
+  animation: fade-in 200ms var(--ease-out) both;
 }
 
 .coach {
@@ -731,6 +749,12 @@ body {
   line-height: 1.4;
 }
 
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
 @keyframes rise {
   from {
     opacity: 0;
@@ -777,16 +801,41 @@ body {
   .rail {
     height: auto;
     overflow-x: auto;
+    overflow-y: hidden;
     flex-direction: row;
+    flex-wrap: nowrap;
     align-items: center;
     gap: 12px;
+    padding: 12px 16px;
     border-right: 0;
     border-bottom: 1px solid var(--line);
   }
 
-  
+  .rail-nav {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+  }
 
-  
+  /* Keep 资产 submenu on one row so the top rail does not grow and crush .stage */
+  .rail-group {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .rail-group__kids {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    margin-left: 0;
+    padding-left: 0;
+    border-left: 0;
+    gap: 2px;
+  }
 
   .nav {
     flex-direction: row;
@@ -800,11 +849,12 @@ body {
   }
 
   .stage {
-    padding: 28px 20px 48px;
+    padding: 28px 20px 20px;
+    scroll-padding-bottom: 48px;
   }
 
   .sheet {
-    padding: 0 0 32px;
+    padding: 0 0 4px;
   }
 
   .empty h1{

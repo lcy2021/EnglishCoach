@@ -26,6 +26,7 @@ const ROUTES = [
   "drill",
   "wrong-book",
   "library",
+  "drill-bank",
   "vocab",
   "stats",
   "settings",
@@ -36,7 +37,8 @@ const ROUTE_LABEL: Record<AppRoute, string> = {
   drill: "AI出题",
   vocab: "生词本",
   "wrong-book": "复习",
-  library: "文章库",
+  library: "资产·文章",
+  "drill-bank": "资产·题目",
   stats: "学习总览",
   settings: "设置",
 };
@@ -84,22 +86,24 @@ export function buildPageTools(ctx: AgentSessionContext) {
       const refresh =
         route === "library"
           ? (["library"] as const)
-          : route === "wrong-book"
-            ? (["wrong-book"] as const)
-            : route === "drill"
-              ? (["drill"] as const)
-              : route === "vocab"
-                ? (["vocab"] as const)
-                : route === "stats"
-                  ? (["stats"] as const)
-                  : undefined;
+          : route === "drill-bank"
+            ? (["drill-bank"] as const)
+            : route === "wrong-book"
+              ? (["wrong-book"] as const)
+              : route === "drill"
+                ? (["drill"] as const)
+                : route === "vocab"
+                  ? (["vocab"] as const)
+                  : route === "stats"
+                    ? (["stats"] as const)
+                    : undefined;
       showPage(ctx, route, refresh ? { refresh: [...refresh] } : {});
       return JSON.stringify({ ok: true, route, label: ROUTE_LABEL[route] });
     },
     {
       name: "navigate",
       description:
-        "Open any app page: practice (文章阅读), drill (AI出题), vocab (生词本), wrong-book (复习), library (文章库), stats (学习总览), settings (设置).",
+        "Open any app page: practice (文章阅读), drill (AI出题), vocab (生词本), wrong-book (复习), library (资产·文章), drill-bank (资产·题目), stats (学习总览), settings (设置).",
       schema: z.object({ route: z.enum(ROUTES) }),
     },
   );
@@ -121,7 +125,7 @@ export function buildPageTools(ctx: AgentSessionContext) {
     },
     {
       name: "list_library",
-      description: "Open the article library and list saved articles. Optional title filter.",
+      description: "Open 资产·文章 and list saved articles. Optional title filter.",
       schema: z.object({ query: z.string().optional() }),
     },
   );
@@ -182,6 +186,7 @@ export function buildPageTools(ctx: AgentSessionContext) {
         zh: prompt.zh,
         words: prompt.words,
         end: prompt.end,
+        lex: prompt.lex,
       });
       showPage(ctx, "drill", { drillId: saved.id, refresh: ["drill"] }, { statusMessage: "题目已出好", deliver: { target: "drill-question", text: saved.zh } });
       return JSON.stringify({
@@ -189,6 +194,7 @@ export function buildPageTools(ctx: AgentSessionContext) {
         id: saved.id,
         zh: saved.zh,
         wordCount: saved.words.length,
+        lexCount: saved.lex.length,
         difficulty: saved.difficulty,
         industry: saved.industry,
       });
@@ -207,7 +213,7 @@ export function buildPageTools(ctx: AgentSessionContext) {
 
   const list_drills = tool(
     async () => {
-      const drills = listDrills(12).map((item) => ({
+      const drills = listDrills(40).map((item) => ({
         id: item.id,
         industry: item.industry,
         difficulty: item.difficulty,
@@ -215,12 +221,12 @@ export function buildPageTools(ctx: AgentSessionContext) {
         graded: item.graded,
       }));
       const tags = listDrillTags().map((tag) => tag.label);
-      showPage(ctx, "drill", { refresh: ["drill"] });
+      showPage(ctx, "drill-bank", { refresh: ["drill-bank"] });
       return JSON.stringify({ tags, drills });
     },
     {
       name: "list_drills",
-      description: "Open AI出题 and list recent drills plus available tags.",
+      description: "Open 资产·题目 and list saved drills plus available tags.",
       schema: z.object({}),
     },
   );
@@ -253,7 +259,7 @@ export function buildPageTools(ctx: AgentSessionContext) {
       if (attempt.length !== drill.words.length) {
         throw new Error(`这道题有 ${drill.words.length} 个空，答案词数对不上`);
       }
-      const prompt: DrillPrompt = { zh: drill.zh, words: drill.words, end: drill.end };
+      const prompt: DrillPrompt = { zh: drill.zh, words: drill.words, end: drill.end, lex: drill.lex };
       reportProgress(ctx, "正在批改");
       const result = await gradeDrill(prompt, attempt);
       updateDrillResult(id, attempt, result.slots, result.summary);

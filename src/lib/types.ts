@@ -54,6 +54,7 @@ export type AppRoute =
   | "drill"
   | "wrong-book"
   | "library"
+  | "drill-bank"
   | "vocab"
   | "stats"
   | "settings";
@@ -79,7 +80,7 @@ export interface PageCommand {
     rate?: number;
     autoPlay?: boolean;
   };
-  refresh?: Array<"library" | "vocab" | "wrong-book" | "drill" | "stats">;
+  refresh?: Array<"library" | "drill-bank" | "vocab" | "wrong-book" | "drill" | "stats">;
 }
 
 export interface WorkspacePatch {

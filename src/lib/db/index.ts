@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
-import type { DrillLevel, DrillListItem, SavedDrill, SlotGrade } from "@/lib/drill/parse";
+import type { DrillLevel, DrillLexItem, DrillListItem, SavedDrill, SlotGrade } from "@/lib/drill/parse";
 import { drillLevelSpec } from "@/lib/drill/parse";
 import type {
   Article,
@@ -59,6 +59,9 @@ function ensureDrillTable(db: Database.Database): void {
   const columns = db.prepare(`PRAGMA table_info(drills)`).all() as Array<{ name: string }>;
   if (!columns.some((column) => column.name === "difficulty")) {
     db.exec(`ALTER TABLE drills ADD COLUMN difficulty TEXT NOT NULL DEFAULT '进阶'`);
+  }
+  if (!columns.some((column) => column.name === "lex_json")) {
+    db.exec(`ALTER TABLE drills ADD COLUMN lex_json TEXT NOT NULL DEFAULT '[]'`);
   }
   const tagCount = db.prepare(`SELECT COUNT(*) AS count FROM drill_tags`).get() as { count: number };
   if (tagCount.count === 0) {
@@ -509,6 +512,32 @@ function readGrades(json: string | null): SlotGrade[] | null {
   return grades;
 }
 
+function readLex(json: string | null): DrillLexItem[] {
+  if (!json) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json) as unknown;
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const items: DrillLexItem[] = [];
+  for (const row of parsed) {
+    if (!row || typeof row !== "object") continue;
+    const kind = (row as { kind?: unknown }).kind;
+    const text = (row as { text?: unknown }).text;
+    const gloss = (row as { gloss?: unknown }).gloss;
+    if ((kind !== "phrase" && kind !== "word") || typeof text !== "string" || typeof gloss !== "string") {
+      continue;
+    }
+    const trimmed = text.trim();
+    const meaning = gloss.trim();
+    if (!trimmed || !meaning) continue;
+    items.push({ kind, text: trimmed, gloss: meaning });
+  }
+  return items;
+}
+
 interface DrillRow {
   id: string;
   industry: string;
@@ -516,6 +545,7 @@ interface DrillRow {
   zh: string;
   words_json: string;
   end_mark: string;
+  lex_json: string | null;
   attempt_json: string | null;
   grades_json: string | null;
   summary: string;
@@ -530,6 +560,7 @@ function toSavedDrill(row: DrillRow): SavedDrill {
     zh: row.zh,
     words: readStringList(row.words_json) ?? [],
     end: endMark(row.end_mark),
+    lex: readLex(row.lex_json),
     attempt: readStringList(row.attempt_json),
     grades: readGrades(row.grades_json),
     summary: row.summary,
@@ -544,12 +575,14 @@ export function saveDrill(input: {
   zh: string;
   words: string[];
   end: SavedDrill["end"];
+  lex?: DrillLexItem[];
 }): SavedDrill {
   const createdAt = nowIso();
+  const lex = input.lex ?? [];
   getDb()
     .prepare(
-      `INSERT INTO drills (id, industry, difficulty, zh, words_json, end_mark, summary, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, '', ?)`,
+      `INSERT INTO drills (id, industry, difficulty, zh, words_json, end_mark, lex_json, summary, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, '', ?)`,
     )
     .run(
       input.id,
@@ -558,10 +591,12 @@ export function saveDrill(input: {
       input.zh,
       JSON.stringify(input.words),
       input.end,
+      JSON.stringify(lex),
       createdAt,
     );
   return {
     ...input,
+    lex,
     attempt: null,
     grades: null,
     summary: "",
@@ -582,7 +617,7 @@ export function updateDrillResult(
     .run(JSON.stringify(attempt), JSON.stringify(grades), summary, id);
 }
 
-export function listDrills(limit = 40): DrillListItem[] {
+export function listDrills(limit = 200): DrillListItem[] {
   const rows = getDb()
     .prepare(
       `SELECT id, industry, difficulty, zh, created_at AS createdAt, grades_json AS gradesJson
@@ -609,7 +644,7 @@ export function listDrills(limit = 40): DrillListItem[] {
 export function getDrill(id: string): SavedDrill | null {
   const row = getDb()
     .prepare(
-      `SELECT id, industry, difficulty, zh, words_json, end_mark, attempt_json, grades_json, summary,
+      `SELECT id, industry, difficulty, zh, words_json, end_mark, lex_json, attempt_json, grades_json, summary,
               created_at AS createdAt
        FROM drills WHERE id = ?`,
     )

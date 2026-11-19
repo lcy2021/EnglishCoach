@@ -73,7 +73,7 @@ function CoachThread() {
             <Mascot className="w-28" />
             <p className="text-lg font-bold">想做什么，直接说</p>
             <span className="max-w-[18rem] text-sm text-muted-foreground">
-              阅读、讲解、翻译、出题、生词、错题、文章库、统计和设置，我都能帮你做。
+              阅读、讲解、翻译、出题、生词、错题、资产、统计和设置，我都能帮你做。
             </span>
             <div className="flex max-w-[18rem] flex-wrap justify-center gap-1.5">
               {SUGGESTIONS.map((text) => (

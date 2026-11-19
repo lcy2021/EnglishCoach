@@ -22,7 +22,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/u
 import { BookLoader } from "@/components/ui/loader";
 import { Pager, pageSlice } from "@/components/ui/pager";
 
-const PAGE_SIZE = 8;
+const PAGE_SIZE = 7;
 
 interface ArticleListItem {
   id: string;
@@ -107,8 +107,8 @@ export function LibraryView() {
   return (
     <section className="sheet space-y-6">
       <header>
-        <h1 className="text-3xl font-bold tracking-tight">文章库</h1>
-        <p className="mt-1 text-muted-foreground">练过的文章都留在这里，点开继续。</p>
+        <h1 className="text-3xl font-bold tracking-tight">文章</h1>
+        <p className="mt-1 text-muted-foreground">资产里的文章都在这里，点开继续读。</p>
       </header>
       {loading ? (
         <BookLoader label="正在翻找你的文章" />

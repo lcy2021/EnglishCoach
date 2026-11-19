@@ -11,11 +11,16 @@ import {
 describe("parseDrillPrompt", () => {
   it("reads a fenced prompt and drops empty words", () => {
     const parsed = parseDrillPrompt(
-      '```json\n{"zh":"我昨天在公园遇见了一位老朋友。","words":["I","met","an","old","friend","yesterday"],"end":"!"}\n```',
+      '```json\n{"zh":"我昨天在公园遇见了一位老朋友。","words":["I","met","an","old","friend","yesterday"],"end":"!","phrases":[{"text":"old friend","gloss":"老朋友"}],"vocab":[{"text":"met","gloss":"遇见"},{"text":"yesterday","gloss":"昨天"}]}\n```',
     );
     assert.equal(parsed.zh, "我昨天在公园遇见了一位老朋友。");
     assert.deepEqual(parsed.words, ["I", "met", "an", "old", "friend", "yesterday"]);
     assert.equal(parsed.end, "!");
+    assert.deepEqual(parsed.lex, [
+      { kind: "phrase", text: "old friend", gloss: "老朋友" },
+      { kind: "word", text: "met", gloss: "遇见" },
+      { kind: "word", text: "yesterday", gloss: "昨天" },
+    ]);
   });
 
   it("rejects a reply that is too short to place underlines", () => {

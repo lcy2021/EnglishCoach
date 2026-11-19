@@ -31,7 +31,7 @@ function textOf(content: unknown): string {
 }
 
 const DRILL_SYSTEM =
-  'You set one translation item for a Chinese learner of English. Reply ONLY JSON: {"zh":string,"words":string[],"end":"."|"?"|"!"}. zh is one natural Chinese sentence matching the given tags and topic. words is its English translation in order, with no punctuation inside a token. Keep apostrophes and hyphens. Match the requested difficulty and word count. If a tag names an exam or school level (初中, 高中, 四级, 六级, 考研), keep vocabulary and sentence shape in that range. If a tag is a domain or scene (生活用语, 职场, 科技), set the content there. end is the closing mark. Do not write the English sentence anywhere except words.';
+  'You set one translation item for a Chinese learner of English. Reply ONLY JSON: {"zh":string,"words":string[],"end":"."|"?"|"!","phrases":[{"text":string,"gloss":string}],"vocab":[{"text":string,"gloss":string}]}. zh is one natural Chinese sentence matching the given tags and topic. words is its English translation in order, with no punctuation inside a token. Keep apostrophes and hyphens. Match the requested difficulty and word count. If a tag names an exam or school level (初中, 高中, 四级, 六级, 考研), keep vocabulary and sentence shape in that range. If a tag is a domain or scene (生活用语, 职场, 科技), set the content there. end is the closing mark. phrases: 1-3 useful multi-word chunks from the English sentence with short Chinese glosses. vocab: 2-5 worthwhile single words (not a/an/the/be/do/have/to/of/in/on/for) with short Chinese glosses. Do not write the English sentence anywhere except words / phrases / vocab.';
 
 /** Ask the model for one Chinese sentence from the tags and difficulty the learner chose. */
 export async function createDrill(

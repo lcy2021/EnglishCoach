@@ -50,7 +50,7 @@ const SOURCE_LABEL: Record<string, string> = {
   "generate-explain": "整篇讲解",
   "paragraph-explain": "段落讲解",
   "explain-selection": "选句讲解",
-  "fetch-clean": "Web搜索",
+  "fetch-clean": "Web搜索清理",
   other: "其他",
 };
 
