@@ -1,0 +1,576 @@
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+import { randomUUID } from "node:crypto";
+import {
+  addWrongItem,
+  getArticle,
+  getExplainCache,
+  getTranslation,
+  getWrongItem,
+  listArticles,
+  listExtractions,
+  listWrongItems,
+  markExtraction,
+  resolveWrongItem,
+  saveArticle,
+  saveExplainCache,
+  saveTranslation,
+  updateParagraphZh,
+} from "@/lib/db";
+import {
+  fetchAndExtract,
+  organizePlainText,
+} from "@/lib/fetch/extract";
+import type { AgentSessionContext } from "@/lib/agent/context";
+import { pushPatch } from "@/lib/agent/context";
+import { getChatModel } from "@/lib/agent/model";
+import { searchWeb } from "@/lib/agent/web-search";
+import type { Extraction, ViewLens } from "@/lib/types";
+
+function requireArticleId(ctx: AgentSessionContext): string {
+  if (!ctx.articleId) {
+    throw new Error("No article is open. Fetch or organize one first.");
+  }
+  return ctx.articleId;
+}
+
+export function buildCoachTools(ctx: AgentSessionContext) {
+  const fetch_and_organize = tool(
+    async ({ url, text, title }) => {
+      const extracted = url
+        ? await fetchAndExtract(url)
+        : organizePlainText(text ?? "", title || "Pasted text");
+      const article = saveArticle({
+        id: randomUUID(),
+        url: extracted.url,
+        title: title || extracted.title,
+        paragraphs: extracted.paragraphs,
+      });
+      pushPatch(ctx, {
+        article,
+        selectedParagraphIndex: 0,
+        viewLens: "read",
+        translateOpen: false,
+        explainExtractions: [],
+        route: "practice",
+        statusMessage: `已整理《${article.title}》（${article.paragraphs.length} 段）`,
+      });
+      return JSON.stringify({
+        ok: true,
+        articleId: article.id,
+        title: article.title,
+        paragraphCount: article.paragraphs.length,
+      });
+    },
+    {
+      name: "fetch_and_organize",
+      description:
+        "Fetch a URL or organize pasted English text into the reader as paragraphs.",
+      schema: z.object({
+        url: z.string().url().optional().describe("Article URL to fetch"),
+        text: z.string().optional().describe("Pasted plain text to organize"),
+        title: z.string().optional().describe("Optional title override"),
+      }),
+    },
+  );
+
+  const set_view_lens = tool(
+    async ({ lens }) => {
+      pushPatch(ctx, {
+        viewLens: lens as ViewLens,
+        translateOpen: lens === "translate" ? true : ctx.translateOpen,
+      });
+      if (lens === "explain" && ctx.articleId) {
+        const cached = getExplainCache(ctx.articleId);
+        if (cached) {
+          const article = getArticle(ctx.articleId);
+          if (article) {
+            const payload = cached.payload as {
+              paragraphs?: Array<{ index: number; zh: string }>;
+            };
+            for (const p of payload.paragraphs ?? []) {
+              updateParagraphZh(article.id, p.index, p.zh);
+            }
+            pushPatch(ctx, {
+              article: getArticle(ctx.articleId),
+              explainExtractions: cached.extractions,
+              viewLens: "explain",
+            });
+          }
+        }
+      }
+      return JSON.stringify({ ok: true, viewLens: lens });
+    },
+    {
+      name: "set_view_lens",
+      description: "Switch reader lens: read | explain | translate.",
+      schema: z.object({
+        lens: z.enum(["read", "explain", "translate"]),
+      }),
+    },
+  );
+
+  const select_paragraph = tool(
+    async ({ index }) => {
+      const articleId = requireArticleId(ctx);
+      const article = getArticle(articleId);
+      if (!article || index < 0 || index >= article.paragraphs.length) {
+        throw new Error("Paragraph index out of range.");
+      }
+      pushPatch(ctx, { selectedParagraphIndex: index });
+      return JSON.stringify({
+        ok: true,
+        index,
+        preview: article.paragraphs[index].text.slice(0, 160),
+      });
+    },
+    {
+      name: "select_paragraph",
+      description: "Focus a paragraph by zero-based index.",
+      schema: z.object({ index: z.number().int().nonnegative() }),
+    },
+  );
+
+  const open_translate_editor = tool(
+    async ({ paragraphIndex }) => {
+      const articleId = requireArticleId(ctx);
+      const index =
+        paragraphIndex ?? ctx.selectedParagraphIndex ?? 0;
+      pushPatch(ctx, {
+        selectedParagraphIndex: index,
+        viewLens: "translate",
+        translateOpen: true,
+      });
+      const draft = getTranslation(articleId, index);
+      return JSON.stringify({
+        ok: true,
+        paragraphIndex: index,
+        existingDraft: draft?.draftZh ?? "",
+      });
+    },
+    {
+      name: "open_translate_editor",
+      description: "Open the Chinese translation editor for a paragraph.",
+      schema: z.object({
+        paragraphIndex: z.number().int().nonnegative().optional(),
+      }),
+    },
+  );
+
+  const save_translation = tool(
+    async ({ paragraphIndex, draftZh }) => {
+      const articleId = requireArticleId(ctx);
+      const index = paragraphIndex ?? ctx.selectedParagraphIndex;
+      if (index === null || index === undefined) {
+        throw new Error("No paragraph selected.");
+      }
+      const saved = saveTranslation({
+        articleId,
+        paragraphIndex: index,
+        draftZh,
+      });
+      pushPatch(ctx, {
+        selectedParagraphIndex: index,
+        translateOpen: true,
+        viewLens: "translate",
+      });
+      return JSON.stringify({ ok: true, saved });
+    },
+    {
+      name: "save_translation",
+      description: "Save the user's Chinese translation draft for a paragraph.",
+      schema: z.object({
+        draftZh: z.string(),
+        paragraphIndex: z.number().int().nonnegative().optional(),
+      }),
+    },
+  );
+
+  const check_translation = tool(
+    async ({ paragraphIndex }) => {
+      const articleId = requireArticleId(ctx);
+      const index = paragraphIndex ?? ctx.selectedParagraphIndex;
+      if (index === null || index === undefined) {
+        throw new Error("No paragraph selected.");
+      }
+      const article = getArticle(articleId);
+      if (!article) throw new Error("Article missing.");
+      const para = article.paragraphs[index];
+      const draft = getTranslation(articleId, index);
+      if (!draft?.draftZh?.trim()) {
+        throw new Error("No translation draft to check. Ask the user to write one.");
+      }
+
+      const model = getChatModel(false, "check-translation");
+      const raw = await model.invoke([
+        {
+          role: "system",
+          content:
+            'You check a Chinese learner\'s translation of one English paragraph. Reply ONLY JSON: {"ok":boolean,"feedback":string,"issues":string[],"shouldAddWrongBook":boolean,"hint":string}. feedback must be Chinese, 3 to 6 short sentences: (1) overall judgment, (2) where meaning drifted or wording felt stiff, with the English cue, (3) why that matters, (4) one clearer Chinese rewrite for the weak part. Do not only say "不对" or "还可以". issues is a short Chinese bullet list of concrete problems. hint is one better Chinese rendering of the hard clause. shouldAddWrongBook is true when meaning is wrong or a key phrase is missing. ok is true only when meaning is complete and natural enough.',
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            english: para.text,
+            chinese: draft.draftZh,
+          }),
+        },
+      ]);
+      const content =
+        typeof raw.content === "string"
+          ? raw.content
+          : JSON.stringify(raw.content);
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      const parsed = jsonMatch
+        ? (JSON.parse(jsonMatch[0]) as {
+            ok: boolean;
+            feedback: string;
+            issues: string[];
+            shouldAddWrongBook: boolean;
+            hint: string;
+          })
+        : {
+            ok: false,
+            feedback: content,
+            issues: [],
+            shouldAddWrongBook: true,
+            hint: "",
+          };
+
+      saveTranslation({
+        articleId,
+        paragraphIndex: index,
+        draftZh: draft.draftZh,
+        lastCheckJson: JSON.stringify(parsed),
+      });
+
+      if (parsed.shouldAddWrongBook || !parsed.ok) {
+        addWrongItem({
+          id: randomUUID(),
+          articleId,
+          paragraphIndex: index,
+          mode: "translate",
+          snippet: para.text.slice(0, 280),
+          userAnswer: draft.draftZh,
+          expectedOrHint: parsed.hint || parsed.feedback,
+          note: (parsed.issues ?? []).join("; "),
+        });
+      }
+
+      pushPatch(ctx, {
+        translationFeedback: parsed.feedback,
+        selectedParagraphIndex: index,
+        translateOpen: true,
+      });
+
+      return JSON.stringify(parsed);
+    },
+    {
+      name: "check_translation",
+      description:
+        "Check the user's Chinese translation for the selected paragraph; may add wrong-book items.",
+      schema: z.object({
+        paragraphIndex: z.number().int().nonnegative().optional(),
+      }),
+    },
+  );
+
+  const generate_explain = tool(
+    async ({ paragraphFrom, paragraphTo }) => {
+      const articleId = requireArticleId(ctx);
+      const article = getArticle(articleId);
+      if (!article) throw new Error("Article missing.");
+
+      const from = paragraphFrom ?? 0;
+      const to = paragraphTo ?? article.paragraphs.length - 1;
+      const slice = article.paragraphs.filter(
+        (p) => p.index >= from && p.index <= to,
+      );
+
+      const model = getChatModel(false, "generate-explain");
+      const raw = await model.invoke([
+        {
+          role: "system",
+          content:
+            "Produce teaching notes for English learners. Reply ONLY JSON: {\"paragraphs\":[{\"index\":number,\"zh\":string}],\"phrases\":[{\"text\":string,\"gloss\":string,\"sentence\":string,\"paragraphIndex\":number}],\"words\":[{\"text\":string,\"gloss\":string,\"sentence\":string,\"paragraphIndex\":number}]}. Each zh is fluent written Chinese in complete sentences, never a word-for-word gloss.",
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            title: article.title,
+            paragraphs: slice.map((p) => ({ index: p.index, text: p.text })),
+          }),
+        },
+      ]);
+      const content =
+        typeof raw.content === "string"
+          ? raw.content
+          : JSON.stringify(raw.content);
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error("Explain generation returned no JSON.");
+      const payload = JSON.parse(jsonMatch[0]) as {
+        paragraphs: Array<{ index: number; zh: string }>;
+        phrases: Array<{
+          text: string;
+          gloss: string;
+          sentence: string;
+          paragraphIndex: number;
+        }>;
+        words: Array<{
+          text: string;
+          gloss: string;
+          sentence: string;
+          paragraphIndex: number;
+        }>;
+      };
+
+      for (const p of payload.paragraphs ?? []) {
+        updateParagraphZh(articleId, p.index, p.zh);
+      }
+
+      const extractions: Extraction[] = [
+        ...(payload.phrases ?? []).map((p) => ({
+          id: randomUUID(),
+          articleId,
+          kind: "phrase" as const,
+          text: p.text,
+          gloss: p.gloss,
+          sentence: p.sentence,
+          paragraphIndex: p.paragraphIndex,
+          status: "unset" as const,
+        })),
+        ...(payload.words ?? []).map((w) => ({
+          id: randomUUID(),
+          articleId,
+          kind: "word" as const,
+          text: w.text,
+          gloss: w.gloss,
+          sentence: w.sentence,
+          paragraphIndex: w.paragraphIndex,
+          status: "unset" as const,
+        })),
+      ];
+
+      saveExplainCache(articleId, payload, extractions);
+      const refreshed = getArticle(articleId);
+      pushPatch(ctx, {
+        article: refreshed,
+        viewLens: "explain",
+        explainExtractions: listExtractions(articleId),
+        statusMessage: "讲解已生成（中英对照 + 短语/生词）",
+      });
+
+      return JSON.stringify({
+        ok: true,
+        paragraphCount: payload.paragraphs?.length ?? 0,
+        phraseCount: payload.phrases?.length ?? 0,
+        wordCount: payload.words?.length ?? 0,
+      });
+    },
+    {
+      name: "generate_explain",
+      description:
+        "Generate bilingual explain + phrase/word extraction for the open article (or a paragraph range).",
+      schema: z.object({
+        paragraphFrom: z.number().int().nonnegative().optional(),
+        paragraphTo: z.number().int().nonnegative().optional(),
+      }),
+    },
+  );
+
+  const explain_selection = tool(
+    async ({ text }) => {
+      const model = getChatModel(false, "explain-selection");
+      const raw = await model.invoke([
+        {
+          role: "system",
+          content:
+            "Explain the English selection for a Chinese learner in concise Chinese with one natural paraphrase.",
+        },
+        { role: "user", content: text },
+      ]);
+      const explanation =
+        typeof raw.content === "string"
+          ? raw.content
+          : JSON.stringify(raw.content);
+      pushPatch(ctx, { translationFeedback: explanation });
+      return explanation;
+    },
+    {
+      name: "explain_selection",
+      description: "Explain a selected English sentence/span without regenerating the whole article.",
+      schema: z.object({ text: z.string().min(1) }),
+    },
+  );
+
+  const mark_extraction = tool(
+    async ({ extractionId, status }) => {
+      const updated = markExtraction(extractionId, status);
+      if (!updated) throw new Error("Extraction not found.");
+      if (status === "unclear") {
+        addWrongItem({
+          id: randomUUID(),
+          articleId: updated.articleId,
+          paragraphIndex: updated.paragraphIndex,
+          mode: "explain",
+          snippet: updated.text,
+          userAnswer: null,
+          expectedOrHint: updated.gloss,
+          note: updated.sentence,
+        });
+      }
+      pushPatch(ctx, {
+        explainExtractions: listExtractions(updated.articleId),
+      });
+      return JSON.stringify({ ok: true, extraction: updated });
+    },
+    {
+      name: "mark_extraction",
+      description: "Mark a phrase/word extraction as known or unclear.",
+      schema: z.object({
+        extractionId: z.string(),
+        status: z.enum(["known", "unclear", "unset"]),
+      }),
+    },
+  );
+
+  const list_wrong_book = tool(
+    async ({ unresolvedOnly }) => {
+      const items = listWrongItems(unresolvedOnly ?? true);
+      return JSON.stringify({
+        count: items.length,
+        items: items.slice(0, 20),
+      });
+    },
+    {
+      name: "list_wrong_book",
+      description: "List wrong-book items (default unresolved only).",
+      schema: z.object({
+        unresolvedOnly: z.boolean().optional(),
+      }),
+    },
+  );
+
+  const open_wrong_item = tool(
+    async ({ id }) => {
+      const item = getWrongItem(id);
+      if (!item) throw new Error("Wrong-book item not found.");
+      const article = getArticle(item.articleId);
+      pushPatch(ctx, {
+        route: "practice",
+        article,
+        selectedParagraphIndex: item.paragraphIndex,
+        viewLens: item.mode === "explain" ? "explain" : "translate",
+        translateOpen: item.mode === "translate",
+        focusWrongItemId: id,
+        statusMessage: "已跳转到错题对应段落",
+      });
+      return JSON.stringify({ ok: true, item });
+    },
+    {
+      name: "open_wrong_item",
+      description: "Open a wrong-book item and restore article/paragraph context.",
+      schema: z.object({ id: z.string() }),
+    },
+  );
+
+  const resolve_wrong_item = tool(
+    async ({ id }) => {
+      const item = resolveWrongItem(id);
+      if (!item) throw new Error("Wrong-book item not found.");
+      return JSON.stringify({ ok: true, item });
+    },
+    {
+      name: "resolve_wrong_item",
+      description: "Mark a wrong-book item as resolved.",
+      schema: z.object({ id: z.string() }),
+    },
+  );
+
+  const open_article = tool(
+    async ({ articleId }) => {
+      const article = getArticle(articleId);
+      if (!article) throw new Error("Article not found.");
+      const extractions = listExtractions(articleId);
+      pushPatch(ctx, {
+        article,
+        route: "practice",
+        selectedParagraphIndex: 0,
+        viewLens: "read",
+        explainExtractions: extractions,
+      });
+      return JSON.stringify({
+        ok: true,
+        title: article.title,
+        paragraphCount: article.paragraphs.length,
+      });
+    },
+    {
+      name: "open_article",
+      description: "Open an article from the library by id.",
+      schema: z.object({ articleId: z.string() }),
+    },
+  );
+
+  const web_search = tool(
+    async ({ query }) => {
+      const result = await searchWeb(query);
+      pushPatch(ctx, { statusMessage: "已完成网页搜索" });
+      return JSON.stringify(result);
+    },
+    {
+      name: "web_search",
+      description:
+        "Search the public web via Azure OpenAI web_search. Use this when the user asks to find an article or look up a current fact. For reading practice, pick one English article URL from citations and then call fetch_and_organize.",
+      schema: z.object({
+        query: z
+          .string()
+          .min(2)
+          .describe("Search question, preferably asking for a readable English article"),
+      }),
+    },
+  );
+
+  const get_workspace_snapshot = tool(
+    async () => {
+      const article = ctx.articleId ? getArticle(ctx.articleId) : null;
+      return JSON.stringify({
+        articleId: ctx.articleId,
+        title: article?.title ?? null,
+        paragraphCount: article?.paragraphs.length ?? 0,
+        selectedParagraphIndex: ctx.selectedParagraphIndex,
+        viewLens: ctx.viewLens,
+        translateOpen: ctx.translateOpen,
+        libraryPreview: listArticles().slice(0, 8),
+      });
+    },
+    {
+      name: "get_workspace_snapshot",
+      description: "Read-only snapshot of the current workspace for grounding.",
+      schema: z.object({
+        includeLibrary: z
+          .boolean()
+          .optional()
+          .describe("Include a short library preview"),
+      }),
+    },
+  );
+
+  return [
+    fetch_and_organize,
+    web_search,
+    set_view_lens,
+    select_paragraph,
+    open_translate_editor,
+    save_translation,
+    check_translation,
+    generate_explain,
+    explain_selection,
+    mark_extraction,
+    list_wrong_book,
+    open_wrong_item,
+    resolve_wrong_item,
+    open_article,
+    get_workspace_snapshot,
+  ];
+}
