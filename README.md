@@ -1,18 +1,26 @@
 # English Coach
 
-自用英语阅读练习工作台。粘贴 URL 或与 Agent 对话拉取并整理文章，再通过段落讲解、自己译或 AI 出题练习。聊天与页面共享同一工作区，Agent 可通过 LangChain 工具控制页面内容。
+> 读真实的英文文章，边读边练：悬停查词、段落讲解、AI 出题、错题复习。一个会“动手”的 AI 教练，和页面共享同一个工作区。
 
-## 技术栈
+自用的英语阅读练习工作台，基于 Next.js + LangChain.js，数据全部存在本地 SQLite。
 
-- Next.js 15（App Router）+ TypeScript + Tailwind CSS
-- LangChain.js（`@langchain/openai`、工具、Agent 循环）
-- SQLite（`better-sqlite3`）
-- Scrapling（Python）整页抓取，失败时回退到 Mozilla Readability
-- jsdom
-- Zustand 工作区状态
-- ECDICT（`stardict.db`）离线悬停释义，支持多词短语
+## 演示
 
-## 安装与配置
+[▶ 观看演示视频](docs/demo.mp4)
+
+## 特性
+
+- **拉文即读**：粘贴 URL，或直接对教练说“帮我找一篇关于 xxx 的文章”。用 Scrapling 抓取整页，失败时回退到 Mozilla Readability，并保留各段正文。
+- **离线悬停查词**：基于 [ECDICT](https://github.com/skywind3000/ECDICT)，不调用大模型；支持 `in spite of`、`look up` 等多词短语的整段高亮，卡片含音标、词性与中文释义。
+- **段落讲解**：选中段落点 **看讲解**，模型给出通顺中文并列出短语 / 生词；也可 **自己译**，保存后让教练检查。
+- **AI 出题**：按标签（生活用语、初中、四级……或自建）和难度生成中文句，英文按词留空，提交后逐词批改。
+- **错题本与生词本**：错题可跳回原文段落；生词本使用间隔重复（Leitner 阶梯）复习。
+- **学习总览**：每日目标、成就、周对比与用量统计。
+- **教练能控页面**：聊天与页面共享状态，Agent 通过 LangChain 工具拉文、切换视图、选段、讲解、检查译文、打开错题、联网搜索等。UI 按钮与工具共用同一套后端能力。
+
+## 快速开始
+
+需要 Node.js 18+（`better-sqlite3` 为原生模块，不支持 Edge 运行时）。可选：Python 3（用于 Scrapling）。
 
 ```bash
 cd english-coach
@@ -20,74 +28,93 @@ npm install
 npm run dev
 ```
 
-`npm run dev` / `npm start` 会先执行 `scripts/ensure-setup.mjs`（`predev` / `prestart`）。该脚本会：
+打开 [http://localhost:3010](http://localhost:3010)。
 
-- 若缺少 `.env.local`，从 `.env.example` 复制（之后请填写 `LLM_API_KEY`）
-- 若缺少词典，下载 [ECDICT](https://github.com/skywind3000/ECDICT) 到 `data/stardict.db`（等同 `npm run dict:fetch`）
-- 若本机有 Python 且未安装 Scrapling，则按 `requirements.txt` 安装 [Scrapling](https://scrapling.readthedocs.io/)
+首次启动会自动执行 `scripts/ensure-setup.mjs`：
 
-已存在的资源会跳过。可用 `SKIP_SETUP=1` 整体跳过，或用 `SKIP_DICT=1` / `SKIP_SCRAPLING=1` 部分跳过。也可单独执行 `npm run setup`。
+1. 缺少 `.env.local` 时从 `.env.example` 复制 —— **请填入你的 `LLM_API_KEY`**
+2. 缺少词典时下载 ECDICT 到 `data/stardict.db`（可能要几分钟）
+3. 本机有 Python 且未安装 Scrapling 时，按 `requirements.txt` 安装
 
-拉文会运行 `scripts/scrapling_fetch.py`，保留各段正文（含短行、以及用 `<br>` 分段的页面）。若缺少 Python 或 Scrapling，则回退为一次 HTTP 请求 + Mozilla Readability。若 `python` 不在 `PATH` 上，请设置 `PYTHON`。pip 下载卡住时可换 PyPI 镜像重试。
+已存在的资源会被跳过。
 
-悬停查词不调用大模型。词典路径可用 `ECDICT_PATH` 覆盖。
+### 配置
 
-编辑 `.env.local`：
+编辑 `.env.local`，任意 OpenAI 兼容端点均可：
 
-```
-LLM_API_KEY=...
+```ini
+LLM_API_KEY=sk-...
 LLM_BASE_URL=https://api.openai.com/v1
 LLM_MODEL=gpt-4o-mini
+
+# 可选
+# DATABASE_PATH=   # SQLite 路径，默认 ./data/english-coach.sqlite
+# ECDICT_PATH=     # 词典路径，默认 ./data/stardict.db
 ```
 
-## 使用方式
+| 环境变量 | 作用 |
+| --- | --- |
+| `SKIP_SETUP=1` | 整体跳过启动前的自动准备 |
+| `SKIP_DICT=1` / `SKIP_SCRAPLING=1` | 分别跳过词典 / Scrapling |
+| `PYTHON` | `python` 不在 `PATH` 时指定解释器 |
 
-```bash
-npm run dev
-```
+也可手动执行 `npm run setup`、`npm run dict:fetch`。pip 下载卡住时可换 PyPI 镜像重试。
 
-打开 [http://localhost:3010](http://localhost:3010)。首次启动若需下载 ECDICT，可能要几分钟。
+## 使用流程
 
-典型流程：
+1. **拉文**：粘贴 URL 点拉取，或让教练在聊天里找一篇。
+2. **阅读**：悬停单词查释义；选中段落点 **看讲解**，或点 **本篇讲解** 处理全文。
+3. **翻译**：用 **自己译** 写下译文并保存，让教练检查。
+4. **出题**：进入 **AI出题**，选标签与难度，填空并获得逐词批改。
+5. **复习**：在 **复习**（错题本）和 **生词本** 中回顾。
 
-1. 粘贴 URL 后点拉取，或让教练在聊天里拉一篇文章。
-2. 悬停单词：若落在词典短语内（如 `in spite of`、`look up`、`a lot of`），会整段高亮；网页搭配如 `to check`、`the model` 仍按单词处理。卡片显示词头、音标、词性与中文释义。悬停不走模型。
-3. 选中段落点 **看讲解**：模型在该段下写出通顺中文，并附若干短语/生词。其它段落保持原样。**本篇讲解** 对全文同理。**自己译** 用于保存并检查你的译文。
-4. 打开 **AI出题**：可多选标签（生活用语、初中、四级等）或自建标签，再选难度（入门、进阶、较难）。模型给出中文句子，按英文词位留空；提交后逐词批改，错词下方给出参考。题目写入 SQLite，表单下方可再打开。
-5. 在 **复习**（错题本）中回顾错题。
+## 技术栈
+
+| 层 | 选型 |
+| --- | --- |
+| 框架 | Next.js 15（App Router）、React 19、TypeScript、Tailwind CSS |
+| Agent | LangChain.js / LangGraph、`@langchain/openai` |
+| 聊天 UI | [assistant-ui](https://www.assistant-ui.com/)，SSE 流式回复 |
+| 存储 | SQLite（`better-sqlite3`） |
+| 抓取 | Scrapling（Python），回退 Mozilla Readability + jsdom |
+| 词典 | ECDICT（离线） |
+| 状态 | Zustand |
 
 ## 项目结构
 
 ```
-src/app/            # 页面与 API 路由
-src/components/     # 工作室 UI
-src/lib/agent/      # LangChain 提示词、工具、运行循环
-src/lib/db/         # SQLite 访问
-src/lib/drill/      # 中译英按词填空出题
-src/lib/explain/    # 段落讲解（聊天模型）
-src/lib/glossary/   # ECDICT 查询与短语匹配
-src/lib/fetch/      # Scrapling 拉文，Readability 兜底
-scripts/            # scrapling_fetch.py、ensure-setup.mjs 等
-src/lib/store/      # 客户端工作区状态
+src/app/            页面与 API 路由
+src/components/     工作室 UI
+src/lib/agent/      LangChain 提示词、工具、运行循环
+src/lib/db/         SQLite 访问与统计
+src/lib/drill/      中译英按词填空出题
+src/lib/explain/    段落讲解
+src/lib/glossary/   ECDICT 查询与短语匹配
+src/lib/fetch/      Scrapling 拉文，Readability 兜底
+src/lib/vocab/      生词本间隔重复
+src/lib/store/      客户端工作区状态
+scripts/            ensure-setup.mjs、scrapling_fetch.py 等
 ```
 
-## 开发约定
+## 开发
 
-- UI 按钮与 LangChain 工具尽量共用同一套后端能力。
-- 不以背单词 / SRS 作为主循环。
-- 有实质改动合并前先跑 `npm run lint`。
-- 终端用户界面文案可用中文。
+```bash
+npm run dev      # 开发服务器（端口 3010）
+npm run build    # 生产构建
+npm start        # 生产运行
+npm test         # 单元测试
+npm run lint     # 合并前请先通过
+```
 
-## 更新记录
+约定：UI 按钮与 LangChain 工具尽量共用后端能力；界面文案使用中文；背单词不是主循环，阅读才是。
 
-### 0.1.0
+路线图见 [Plan.md](./Plan.md)。
 
-- 工作室骨架：URL/粘贴拉文、阅读区、悬停释义 API
-- 悬停释义读本地 ECDICT，按指针附近最长短语匹配
-- 段落 **看讲解** 由聊天模型生成通顺中文；悬停保持离线
-- **AI出题** 按学习者选择的方向生成中文句，再按英文词逐词批改
-- LangChain 教练 MVP 工具（拉文、讲解、译文检查、错题本跳转）
-- `web_search` 走 Azure OpenAI Responses API 托管联网搜索，教练可再拉取引用文章
-- 教练聊天使用 [assistant-ui](https://www.assistant-ui.com/)，SSE 流式回复
-- 文章库与错题本页面
-- 数据落在 `data/` 下的 SQLite
+## 已知限制
+
+- 需要浏览器挑战的网站（强反爬）仍可能拉取失败。
+- 教练的联网搜索依赖 Azure OpenAI Responses API 的托管搜索。
+
+## 许可
+
+[MIT](./LICENSE)
