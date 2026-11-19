@@ -12,7 +12,6 @@ const ENV_VARS: ReadonlyArray<readonly [string, string]> = [
   ["LLM_API_KEY", "模型密钥"],
   ["LLM_BASE_URL", "接口地址"],
   ["LLM_MODEL", "模型名称"],
-  ["DATABASE_PATH", "可选：数据库路径"],
 ];
 
 const ACCENTS: ReadonlyArray<{ value: Accent; label: string }> = [
