@@ -221,11 +221,13 @@ export function AppShell() {
       if (Object.keys(speech).length > 0) useSpeech.getState().set(speech);
     }
     const commandId = pageCommand.id;
-    queueMicrotask(() => {
+    // Give page views a turn to consume drillId / refresh before clearing.
+    const timer = window.setTimeout(() => {
       if (useWorkspace.getState().pageCommand?.id === commandId) {
         useWorkspace.setState({ pageCommand: null });
       }
-    });
+    }, 50);
+    return () => window.clearTimeout(timer);
   }, [pageCommand]);
 
   return (

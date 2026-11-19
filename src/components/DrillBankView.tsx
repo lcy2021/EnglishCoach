@@ -46,12 +46,14 @@ export function DrillBankView() {
   }, [pageCommand]);
 
   function openDrill(id: string) {
-    applyPatch({
-      route: "drill",
-      pageCommand: { id: `open-${id}`, route: "drill", drillId: id },
-      statusMessage: "已打开这道题",
-    });
+    // Route first so DrillView is mounted before the one-shot pageCommand arrives.
     setRoute("drill");
+    requestAnimationFrame(() => {
+      applyPatch({
+        pageCommand: { id: `open-${id}`, route: "drill", drillId: id },
+        statusMessage: "已打开这道题",
+      });
+    });
   }
 
   return (
