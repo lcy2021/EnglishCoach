@@ -1,7 +1,29 @@
 import type { Metadata } from "next";
 import { Literata, Noto_Sans_SC } from "next/font/google";
 import "./globals.css";
+import { ShellState } from "@/components/ShellState";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { getStats } from "@/lib/db/stats";
+import { vocabSummary } from "@/lib/db/vocab";
+import type { VocabSummary } from "@/lib/vocab/srs";
+
+export const dynamic = "force-dynamic";
+
+/** Sidebar figures for the first paint. Client navigations do not ask for them again. */
+function readShell(): { today: { drills: number; tokens: number }; vocab: VocabSummary } {
+  try {
+    const stats = getStats(1);
+    return {
+      today: { drills: stats.today.drills, tokens: stats.today.input + stats.today.output },
+      vocab: vocabSummary(),
+    };
+  } catch {
+    return {
+      today: { drills: 0, tokens: 0 },
+      vocab: { total: 0, due: 0, mastered: 0, keys: [] },
+    };
+  }
+}
 
 const read = Literata({
   subsets: ["latin"],
@@ -25,10 +47,15 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const shell = readShell();
   return (
     <html lang="zh-CN" className="font-sans">
       <body className={`${read.variable} ${ui.variable} antialiased`}>
-        <TooltipProvider>{children}</TooltipProvider>
+        <TooltipProvider>
+          <ShellState today={shell.today} vocab={shell.vocab}>
+            {children}
+          </ShellState>
+        </TooltipProvider>
       </body>
     </html>
   );

@@ -14,8 +14,10 @@ import {
   SpellCheck,
 } from "lucide-react";
 import { motion, MotionConfig } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { useWorkspace, type AppRoute } from "@/lib/store/workspace";
+import { pathFromRoute, routeFromPath } from "@/lib/route-path";
 import { GoalRing } from "@/components/GoalRing";
 import { useGoal } from "@/lib/store/goal";
 import { OwlPet, pokeOwl } from "@/components/OwlPet";
@@ -32,6 +34,7 @@ import { LibraryView } from "@/components/LibraryView";
 import { DrillBankView } from "@/components/DrillBankView";
 import { SettingsView } from "@/components/SettingsView";
 import { VocabView } from "@/components/VocabView";
+import { useToday } from "@/lib/store/today";
 import { useVocab } from "@/lib/store/vocab";
 import { useLevel } from "@/lib/store/level";
 import { useSpeech, type Accent } from "@/lib/speech";
@@ -71,56 +74,37 @@ const NAV: ReadonlyArray<NavItem> = [
 
 /** Small "today" card at the bottom of the sidebar: questions done + tokens spent. */
 function TodayCard() {
-  const route = useWorkspace((s) => s.route);
-  const busy = useWorkspace((s) => s.busy);
-  const [today, setToday] = useState<{ drills: number; tokens: number } | null>(null);
+  const drills = useToday((s) => s.drills);
+  const tokens = useToday((s) => s.tokens);
+  const ready = useToday((s) => s.ready);
   const setRoute = useWorkspace((s) => s.setRoute);
   const goal = useGoal((s) => s.goal);
   const lastDrills = useRef<number | null>(null);
 
   // Celebrate the moment today's goal is reached, not on every page load afterwards.
   useEffect(() => {
-    if (!today) return;
+    if (!ready) return;
     const before = lastDrills.current;
-    lastDrills.current = today.drills;
-    if (before !== null && before < goal && today.drills >= goal) {
+    lastDrills.current = drills;
+    if (before !== null && before < goal && drills >= goal) {
       pokeOwl("cheer", `今日目标达成!${goal} 题完成,太棒了`);
     }
-  }, [today, goal]);
+  }, [ready, drills, goal]);
 
-  useEffect(() => {
-    let cancelled = false;
-    // Refresh on page change and whenever the coach finishes a reply.
-    if (busy) return;
-    (async () => {
-      try {
-        const res = await fetch("/api/stats?days=1", { cache: "no-store" });
-        if (!res.ok) return;
-        const data = (await res.json()) as { today: { drills: number; input: number; output: number } };
-        if (!cancelled) setToday({ drills: data.today.drills, tokens: data.today.input + data.today.output });
-      } catch {
-        /* the card is decorative; ignore */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [route, busy]);
-
-  if (!today) return null;
+  if (!ready) return null;
   return (
     <button
       type="button"
       onClick={() => setRoute("stats")}
       className="mt-auto flex items-center gap-3 rounded-2xl border bg-card px-3.5 py-3 text-left transition-colors hover:bg-muted"
     >
-      <GoalRing done={today.drills} goal={goal} size={44} stroke={5} />
+      <GoalRing done={drills} goal={goal} size={44} stroke={5} />
       <span className="min-w-0">
         <span className="block text-xs font-semibold text-muted-foreground">
-          {today.drills >= goal ? "今日目标达成" : `今日目标 ${goal} 题`}
+          {drills >= goal ? "今日目标达成" : `今日目标 ${goal} 题`}
         </span>
-        <span className="mt-0.5 block text-sm font-bold">{today.drills} 题</span>
-        <span className="block text-xs text-muted-foreground">{formatCount(today.tokens)} tokens</span>
+        <span className="mt-0.5 block text-sm font-bold">{drills} 题</span>
+        <span className="block text-xs text-muted-foreground">{formatCount(tokens)} tokens</span>
       </span>
     </button>
   );
@@ -183,12 +167,37 @@ function NavButton({
 }
 
 export function AppShell() {
-  const route = useWorkspace((s) => s.route);
+  const pathname = usePathname();
+  const router = useRouter();
+  const route = routeFromPath(pathname);
+  const storeRoute = useWorkspace((s) => s.route);
   const chatOpen = useWorkspace((s) => s.chatOpen);
   const setRoute = useWorkspace((s) => s.setRoute);
+  const routeFromUrl = useRef(false);
+
+  // The address is the page. Refresh and the back button read it; clicks and the coach write it.
+  useLayoutEffect(() => {
+    const canonical = pathFromRoute(route);
+    if (canonical !== pathname) {
+      router.replace(canonical);
+      return;
+    }
+    if (useWorkspace.getState().route !== route) {
+      routeFromUrl.current = true;
+      useWorkspace.setState({ route });
+    }
+  }, [pathname, route, router]);
+
+  useEffect(() => {
+    if (routeFromUrl.current) {
+      routeFromUrl.current = false;
+      return;
+    }
+    const path = pathFromRoute(storeRoute);
+    if (path !== pathname) router.push(path);
+  }, [storeRoute, pathname, router]);
   const setChatOpen = useWorkspace((s) => s.setChatOpen);
   const dueWords = useVocab((s) => s.due);
-  const refreshVocab = useVocab((s) => s.refresh);
   const bankActive = (BANK_ROUTES as readonly string[]).includes(route);
   const [bankOpen, setBankOpen] = useState(bankActive);
 
@@ -201,10 +210,6 @@ export function AppShell() {
     useSpeech.getState().hydrate();
     useGoal.getState().hydrate();
   }, []);
-
-  useEffect(() => {
-    void refreshVocab();
-  }, [route, refreshVocab]);
 
   const pageCommand = useWorkspace((s) => s.pageCommand);
   useEffect(() => {

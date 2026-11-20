@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { BookLoader } from "@/components/ui/loader";
-import { Pager, pageSlice } from "@/components/ui/pager";
+import { Pager } from "@/components/ui/pager";
 
 const PAGE_SIZE = 7;
 
@@ -40,8 +40,10 @@ function formatYmd(iso: string): string {
 
 export function LibraryView() {
   const [articles, setArticles] = useState<ArticleListItem[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
+  const [reloadKey, setReloadKey] = useState(0);
   const [deleteTarget, setDeleteTarget] = useState<ArticleListItem | null>(null);
   const openArticleId = useWorkspace((s) => s.article?.id ?? null);
   const loadArticle = useWorkspace((s) => s.loadArticle);
@@ -49,26 +51,32 @@ export function LibraryView() {
   const applyPatch = useWorkspace((s) => s.applyPatch);
 
   useEffect(() => {
-    void (async () => {
-      try {
-        const res = await fetch("/api/articles");
-        const data = (await res.json()) as { articles: ArticleListItem[] };
-        setArticles(data.articles ?? []);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+    let cancelled = false;
+    setLoading(true);
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const res = await fetch(`/api/articles?page=${page}&pageSize=${PAGE_SIZE}`, { cache: "no-store" });
+          const data = (await res.json()) as { articles: ArticleListItem[]; total: number; page: number };
+          if (cancelled) return;
+          setArticles(data.articles ?? []);
+          setTotal(data.total ?? 0);
+          if (data.page && data.page !== page) setPage(data.page);
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
+      })();
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [page, reloadKey]);
 
   const pageCommand = useWorkspace((s) => s.pageCommand);
   useEffect(() => {
     if (!pageCommand?.refresh?.includes("library")) return;
-    void (async () => {
-      const res = await fetch("/api/articles");
-      const data = (await res.json()) as { articles: ArticleListItem[] };
-      setArticles(data.articles ?? []);
-      setLoading(false);
-    })();
+    setReloadKey((key) => key + 1);
   }, [pageCommand]);
 
   async function openArticle(id: string) {
@@ -90,7 +98,7 @@ export function LibraryView() {
       setDeleteTarget(null);
       return;
     }
-    setArticles((current) => current.filter((item) => item.id !== id));
+    setReloadKey((key) => key + 1);
     setDeleteTarget(null);
     if (openArticleId === id) {
       applyPatch({
@@ -110,7 +118,7 @@ export function LibraryView() {
         <h1 className="text-3xl font-bold tracking-tight">文章</h1>
         <p className="mt-1 text-muted-foreground">资产里的文章都在这里，点开继续读。</p>
       </header>
-      {loading ? (
+      {loading && articles.length === 0 ? (
         <BookLoader label="正在翻找你的文章" />
       ) : articles.length === 0 ? (
         <Empty className="rounded-2xl border-2 border-dashed">
@@ -121,8 +129,8 @@ export function LibraryView() {
           </EmptyHeader>
         </Empty>
       ) : (
-        <ul className="grid grid-cols-[minmax(0,1fr)] gap-3">
-          {pageSlice(articles, page, PAGE_SIZE).map((a, i) => (
+        <ul className={`grid grid-cols-[minmax(0,1fr)] gap-3 ${loading ? "opacity-60" : ""}`}>
+          {articles.map((a, i) => (
             <motion.li
               key={a.id}
               className="min-w-0"
@@ -154,7 +162,7 @@ export function LibraryView() {
           ))}
         </ul>
       )}
-      {!loading ? <Pager page={page} total={articles.length} pageSize={PAGE_SIZE} onPageChange={setPage} /> : null}
+      {total > 0 ? <Pager page={page} total={total} pageSize={PAGE_SIZE} onPageChange={setPage} /> : null}
 
       <AlertDialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>

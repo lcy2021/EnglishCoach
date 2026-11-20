@@ -13,9 +13,9 @@ import {
   LegendKey,
   RankedBars,
   StackedColumns,
-  formatCount,
 } from "@/components/charts";
 import { cn } from "@/lib/utils";
+import { useToday } from "@/lib/store/today";
 import { useWorkspace } from "@/lib/store/workspace";
 import { BookLoader } from "@/components/ui/loader";
 
@@ -40,6 +40,7 @@ const RANGES = [
   { days: 7, label: "近 7 天" },
   { days: 14, label: "近 14 天" },
   { days: 30, label: "近 30 天" },
+  { days: 0, label: "全部" },
 ] as const;
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -87,24 +88,7 @@ function Delta({ now, before, unit = "" }: { now: number | null; before: number 
 }
 
 /** This week against the last, from the trailing 14 days regardless of the chart range. */
-function WeeklyReport() {
-  const [days, setDays] = useState<DayPoint[] | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/stats?days=14", { cache: "no-store" });
-        if (!res.ok) return;
-        const data = (await res.json()) as StatsPayload;
-        if (!cancelled) setDays(data.days);
-      } catch {
-        /* the card is optional */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+function WeeklyReport({ days }: { days: DayPoint[] | null }) {
   if (!days) return null;
   const { thisWeek, lastWeek } = weekCompare(days);
   const rows: Array<{ label: string; value: string; note: React.ReactNode }> = [
@@ -150,36 +134,67 @@ export function StatsView() {
   const setGoal = useGoal((s) => s.setGoal);
   const [range, setRange] = useState<number>(14);
   const [stats, setStats] = useState<StatsPayload | null>(null);
+  const [reportDays, setReportDays] = useState<DayPoint[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    (async () => {
-      try {
-        const res = await fetch(`/api/stats?days=${range}`, { cache: "no-store" });
-        if (!res.ok) throw new Error("统计加载失败");
-        const data = (await res.json()) as StatsPayload;
-        if (!cancelled) {
+    // Defer so React strict mode does not send the request twice in dev.
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const res = await fetch(`/api/stats?days=${range}`, { cache: "no-store" });
+          if (!res.ok) throw new Error("统计加载失败");
+          const data = (await res.json()) as StatsPayload;
+          if (cancelled) return;
           setStats(data);
           setError("");
+          useToday.getState().setToday({
+            drills: data.today.drills,
+            tokens: data.today.input + data.today.output,
+          });
+          if (range === 14) setReportDays(data.days);
+        } catch (caught) {
+          if (!cancelled) setError(caught instanceof Error ? caught.message : "统计加载失败");
+        } finally {
+          if (!cancelled) setLoading(false);
         }
-      } catch (caught) {
-        if (!cancelled) setError(caught instanceof Error ? caught.message : "统计加载失败");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
+      })();
+    }, 0);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, [range]);
+
+  // The weekly card needs 14 days. The default chart range is already 14, so reuse that response.
+  useEffect(() => {
+    if (range === 14 || reportDays) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const res = await fetch("/api/stats?days=14", { cache: "no-store" });
+          if (!res.ok || cancelled) return;
+          const data = (await res.json()) as StatsPayload;
+          if (!cancelled) setReportDays(data.days);
+        } catch {
+          /* the card is optional */
+        }
+      })();
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [range, reportDays]);
 
   const pageCommand = useWorkspace((s) => s.pageCommand);
   useEffect(() => {
     const days = pageCommand?.statsDays;
-    if (days === 7 || days === 14 || days === 30) setRange(days);
+    if (days === 0 || days === 7 || days === 14 || days === 30) setRange(days);
   }, [pageCommand]);
 
   const today = stats?.today;
@@ -190,7 +205,7 @@ export function StatsView() {
 
   return (
     <section className="sheet !max-w-[820px] space-y-5">
-      <header className="flex flex-wrap items-end justify-between gap-3">
+      <header className="space-y-3">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">学习总览</h1>
           <p className="mt-1 text-muted-foreground">今天练了多少、答得怎么样、模型花了多少 token。</p>
@@ -268,20 +283,36 @@ export function StatsView() {
               </div>
             </div>
             <Tile
-              label="今日 Token"
-              value={formatCount(today.input + today.output)}
-              note={`输入 ${formatCount(today.input)} · 输出 ${formatCount(today.output)}`}
+              label={range === 0 ? "全部" : "今日 Token"}
+              value={(range === 0 ? stats.window.input + stats.window.output : today.input + today.output).toLocaleString("en-US")}
+              note={
+                range === 0
+                  ? `输入 ${stats.window.input.toLocaleString("en-US")} · 输出 ${stats.window.output.toLocaleString("en-US")}`
+                  : `输入 ${today.input.toLocaleString("en-US")} · 输出 ${today.output.toLocaleString("en-US")}`
+              }
             />
             <Tile label="连续练习" value={`${stats.streakDays} 天`} note={stats.streakDays > 0 ? "保持住!" : "今天做一题就开始计"} />
-            <Tile label={`${range} 天题数`} value={`${stats.window.drills}`} note={windowRate === null ? "还没有数据" : `全对率 ${windowRate}%`} />
-            <Tile label="累计题数" value={stats.allTime.drills.toLocaleString("en-US")} note={`${range} 天内调用模型 ${stats.window.calls} 次`} />
+            <Tile
+              label={range === 0 ? "累计题数" : `${range} 天题数`}
+              value={`${stats.window.drills}`}
+              note={windowRate === null ? "还没有数据" : `全对率 ${windowRate}%`}
+            />
+            {range === 0 ? (
+              <Tile label="模型调用" value={stats.window.calls.toLocaleString("en-US")} note="全部记录" />
+            ) : (
+              <Tile
+                label="累计题数"
+                value={stats.allTime.drills.toLocaleString("en-US")}
+                note={`${range} 天内调用模型 ${stats.window.calls} 次`}
+              />
+            )}
           </div>
 
-          <WeeklyReport />
+          <WeeklyReport days={reportDays} />
 
           <ChartCard
             title="每日练习"
-            subtitle={`近 ${range} 天批改过的题`}
+            subtitle={range === 0 ? "全部批改过的题" : `近 ${range} 天批改过的题`}
             dim={loading}
             legend={
               <>
@@ -315,7 +346,9 @@ export function StatsView() {
             title="Token 消耗"
             subtitle={
               hasTokens
-                ? `近 ${range} 天共 ${(stats.window.input + stats.window.output).toLocaleString("en-US")} tokens`
+                ? range === 0
+                  ? `总共 ${(stats.window.input + stats.window.output).toLocaleString("en-US")} tokens`
+                  : `近 ${range} 天共 ${(stats.window.input + stats.window.output).toLocaleString("en-US")} tokens`
                 : "从现在起,每次调用模型都会记录"
             }
             dim={loading}
@@ -349,7 +382,7 @@ export function StatsView() {
 
           <ChartCard
             title="Token 花在哪"
-            subtitle={`近 ${range} 天按功能统计,多的在上`}
+            subtitle={range === 0 ? "全部记录按功能统计,多的在上" : `近 ${range} 天按功能统计,多的在上`}
             dim={loading}
             table={
               <DataTable

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { getDrill, listDrills, saveDrill, updateDrillResult } from "@/lib/db";
+import { getDrill, listDrillsPage, saveDrill, updateDrillResult } from "@/lib/db";
+import { readPage } from "@/lib/db/page";
 import { createDrill, gradeDrill } from "@/lib/drill/drill";
 import { drillLevelSpec, type DrillPrompt } from "@/lib/drill/parse";
 
@@ -8,13 +9,20 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  const id = new URL(request.url).searchParams.get("id");
+  const searchParams = new URL(request.url).searchParams;
+  const id = searchParams.get("id");
   if (id) {
     const drill = getDrill(id);
     if (!drill) return NextResponse.json({ error: "找不到这道题" }, { status: 404 });
     return NextResponse.json({ drill });
   }
-  return NextResponse.json({ drills: listDrills() });
+  const result = listDrillsPage(readPage(searchParams.get("page"), 1), readPage(searchParams.get("pageSize"), 7));
+  return NextResponse.json({
+    drills: result.items,
+    total: result.total,
+    page: result.page,
+    pageSize: result.pageSize,
+  });
 }
 
 function asWords(value: unknown): string[] {

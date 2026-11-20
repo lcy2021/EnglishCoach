@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { deleteArticle, getArticle, listArticles } from "@/lib/db";
+import { deleteArticle, getArticle, listArticlesPage } from "@/lib/db";
+import { readPage } from "@/lib/db/page";
 
 export const runtime = "nodejs";
 
@@ -13,7 +14,14 @@ export async function GET(request: Request) {
     }
     return NextResponse.json({ article });
   }
-  return NextResponse.json({ articles: listArticles() });
+  const pageSize = readPage(searchParams.get("pageSize"), 7);
+  const result = listArticlesPage(readPage(searchParams.get("page"), 1), pageSize);
+  return NextResponse.json({
+    articles: result.items,
+    total: result.total,
+    page: result.page,
+    pageSize: result.pageSize,
+  });
 }
 
 export async function DELETE(request: Request) {

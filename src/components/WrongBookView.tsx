@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { BookLoader } from "@/components/ui/loader";
-import { Pager, pageSlice } from "@/components/ui/pager";
+import { Pager } from "@/components/ui/pager";
 import type { WrongBookItem } from "@/lib/types";
 
 const PAGE_SIZE = 6;
@@ -18,28 +18,39 @@ const PAGE_SIZE = 6;
 export function WrongBookView() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [reloadKey, setReloadKey] = useState(0);
   const [items, setItems] = useState<WrongBookItem[]>([]);
   const applyPatch = useWorkspace((s) => s.applyPatch);
   const setRoute = useWorkspace((s) => s.setRoute);
 
-  async function reload() {
-    try {
-      const res = await fetch("/api/wrong-book");
-      const data = (await res.json()) as { items: WrongBookItem[] };
-      setItems(data.items ?? []);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   useEffect(() => {
-    void reload();
-  }, []);
+    let cancelled = false;
+    setLoading(true);
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const res = await fetch(`/api/wrong-book?page=${page}&pageSize=${PAGE_SIZE}`, { cache: "no-store" });
+          const data = (await res.json()) as { items: WrongBookItem[]; total: number; page: number };
+          if (cancelled) return;
+          setItems(data.items ?? []);
+          setTotal(data.total ?? 0);
+          if (data.page && data.page !== page) setPage(data.page);
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
+      })();
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [page, reloadKey]);
 
   const pageCommand = useWorkspace((s) => s.pageCommand);
   useEffect(() => {
     if (!pageCommand?.refresh?.includes("wrong-book")) return;
-    void reload();
+    setReloadKey((key) => key + 1);
   }, [pageCommand]);
 
   async function practiceAgain(item: WrongBookItem) {
@@ -67,7 +78,7 @@ export function WrongBookView() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "resolve", id }),
     });
-    await reload();
+    setReloadKey((key) => key + 1);
   }
 
   return (
@@ -76,7 +87,7 @@ export function WrongBookView() {
         <h1 className="text-3xl font-bold tracking-tight">错题本</h1>
         <p className="mt-1 text-muted-foreground">翻译没过关、讲解里仍模糊的内容会回到这里。</p>
       </header>
-      {loading ? (
+      {loading && items.length === 0 ? (
         <BookLoader label="正在翻开错题本" />
       ) : items.length === 0 ? (
         <Empty className="rounded-2xl border-2 border-dashed">
@@ -87,8 +98,8 @@ export function WrongBookView() {
           </EmptyHeader>
         </Empty>
       ) : (
-        <ul className="grid grid-cols-[minmax(0,1fr)] gap-3">
-          {pageSlice(items, page, PAGE_SIZE).map((item, i) => (
+        <ul className={`grid grid-cols-[minmax(0,1fr)] gap-3 ${loading ? "opacity-60" : ""}`}>
+          {items.map((item, i) => (
             <motion.li
               key={item.id}
               initial={{ opacity: 0, y: 14 }}
@@ -130,7 +141,7 @@ export function WrongBookView() {
           ))}
         </ul>
       )}
-      {!loading ? <Pager page={page} total={items.length} pageSize={PAGE_SIZE} onPageChange={setPage} /> : null}
+      {total > 0 ? <Pager page={page} total={total} pageSize={PAGE_SIZE} onPageChange={setPage} /> : null}
     </section>
   );
 }

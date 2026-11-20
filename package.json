@@ -11,7 +11,7 @@
     "start": "next start -p 3010",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "test": "node --experimental-strip-types --test src/lib/glossary/match.test.ts src/lib/explain/paragraph.test.ts src/lib/drill/parse.test.ts src/lib/vocab/srs.test.ts src/lib/glossary/level.test.ts src/lib/fetch/clean.test.ts src/lib/fetch/keep-parse.test.ts src/lib/goals.test.ts",
+    "test": "node --experimental-strip-types --test src/lib/glossary/match.test.ts src/lib/explain/paragraph.test.ts src/lib/drill/parse.test.ts src/lib/vocab/srs.test.ts src/lib/glossary/level.test.ts src/lib/fetch/clean.test.ts src/lib/fetch/keep-parse.test.ts src/lib/goals.test.ts src/lib/agent/paragraph-context.test.ts src/lib/usage-stats.test.ts src/lib/route-path.test.ts src/lib/db/page.test.ts",
     "dict:fetch": "node scripts/fetch-ecdict.mjs"
   },
   "dependencies": {

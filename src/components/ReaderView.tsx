@@ -66,23 +66,26 @@ export function ReaderView() {
       return;
     }
     let cancelled = false;
-    (async () => {
-      try {
-        const paragraphs = useWorkspace.getState().article?.paragraphs.map((p) => p.text) ?? [];
-        const res = await fetch("/api/analyze", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ paragraphs, level }),
-        });
-        if (!res.ok) throw new Error("analyze failed");
-        const data = (await res.json()) as Analysis;
-        if (!cancelled) setAnalysis(data);
-      } catch {
-        if (!cancelled) setAnalysis(null);
-      }
-    })();
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const paragraphs = useWorkspace.getState().article?.paragraphs.map((p) => p.text) ?? [];
+          const res = await fetch("/api/analyze", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ paragraphs, level }),
+          });
+          if (!res.ok) throw new Error("analyze failed");
+          const data = (await res.json()) as Analysis;
+          if (!cancelled) setAnalysis(data);
+        } catch {
+          if (!cancelled) setAnalysis(null);
+        }
+      })();
+    }, 0);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, [articleId, level]);
 
@@ -117,19 +120,22 @@ export function ReaderView() {
   useEffect(() => {
     if (!article || selected === null) return;
     let cancelled = false;
-    (async () => {
-      const res = await fetch(
-        `/api/translations?articleId=${article.id}&paragraphIndex=${selected}`,
-      );
-      const data = (await res.json()) as {
-        translation?: { draftZh?: string };
-      };
-      if (!cancelled) {
-        setTranslateDraft(data.translation?.draftZh ?? "");
-      }
-    })();
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        const res = await fetch(
+          `/api/translations?articleId=${article.id}&paragraphIndex=${selected}`,
+        );
+        const data = (await res.json()) as {
+          translation?: { draftZh?: string };
+        };
+        if (!cancelled) {
+          setTranslateDraft(data.translation?.draftZh ?? "");
+        }
+      })();
+    }, 0);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, [article, selected, setTranslateDraft]);
 

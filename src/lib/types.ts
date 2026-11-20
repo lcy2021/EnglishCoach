@@ -70,7 +70,7 @@ export interface PageCommand {
     query?: string;
     startReview?: boolean;
   };
-  /** 7, 14, or 30. */
+  /** 0 is all-time. Otherwise 7, 14, or 30. */
   statsDays?: number;
   settings?: {
     goal?: number;

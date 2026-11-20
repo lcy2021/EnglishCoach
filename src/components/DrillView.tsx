@@ -13,6 +13,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { speak as speakAloud, speechSupported, stopSpeaking } from "@/lib/speech";
+import { useToday } from "@/lib/store/today";
 import { useWorkspace } from "@/lib/store/workspace";
 import { DRILL_LEVELS, normalizeWord, type DrillLevel, type SavedDrill, type SlotGrade } from "@/lib/drill/parse";
 
@@ -44,23 +45,29 @@ export function DrillView() {
   const [speaking, setSpeaking] = useState(false);
   const inputs = useRef<Array<HTMLInputElement | null>>([]);
 
-  async function loadTags() {
-    const res = await fetch("/api/drill-tags");
-    const data = (await res.json()) as { tags?: TagItem[] };
-    const next = data.tags ?? [];
-    setTags(next);
-    setSelected((current) => {
-      if (current.length > 0) {
-        return current.filter((label) => next.some((tag) => tag.label === label));
-      }
-      const fallback = next.find((tag) => tag.label === "生活用语") ?? next[0];
-      return fallback ? [fallback.label] : [];
-    });
-  }
-
   useEffect(() => {
-    void loadTags();
-    return () => stopSpeaking();
+    let current = true;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        const res = await fetch("/api/drill-tags");
+        if (!current) return;
+        const data = (await res.json()) as { tags?: TagItem[] };
+        const next = data.tags ?? [];
+        setTags(next);
+        setSelected((currentSelected) => {
+          if (currentSelected.length > 0) {
+            return currentSelected.filter((label) => next.some((tag) => tag.label === label));
+          }
+          const fallback = next.find((tag) => tag.label === "生活用语") ?? next[0];
+          return fallback ? [fallback.label] : [];
+        });
+      })();
+    }, 0);
+    return () => {
+      current = false;
+      window.clearTimeout(timer);
+      stopSpeaking();
+    };
   }, []);
 
   const pageCommand = useWorkspace((s) => s.pageCommand);
@@ -195,6 +202,7 @@ export function DrillView() {
       });
       pokeOwl("happy");
       throwText("drill-question", data.zh);
+      void useToday.getState().refresh();
     } catch (caught) {
       pokeOwl("happy");
       setPrompt(null);
@@ -234,6 +242,7 @@ export function DrillView() {
       setSummary(data.summary ?? "");
       throwText("drill-result", data.summary ?? "");
       speakSentence(prompt);
+      void useToday.getState().refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "批改失败");
     } finally {

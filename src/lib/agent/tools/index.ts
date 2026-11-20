@@ -9,7 +9,7 @@ import {
   getWrongItem,
   listArticles,
   listExtractions,
-  listWrongItems,
+  listWrongItemsPage,
   markExtraction,
   resolveWrongItem,
   saveArticle,
@@ -125,7 +125,7 @@ export function buildCoachTools(ctx: AgentSessionContext) {
       return JSON.stringify({
         ok: true,
         index,
-        preview: article.paragraphs[index].text.slice(0, 160),
+        text: article.paragraphs[index].text,
       });
     },
     {
@@ -401,15 +401,15 @@ export function buildCoachTools(ctx: AgentSessionContext) {
 
   const list_wrong_book = tool(
     async ({ unresolvedOnly }) => {
-      const items = listWrongItems(unresolvedOnly ?? true);
+      const page = listWrongItemsPage(1, 20, unresolvedOnly ?? true);
       pushPatch(ctx, {
         route: "wrong-book",
         statusMessage: "已打开复习",
         pageCommand: { id: randomUUID(), route: "wrong-book", refresh: ["wrong-book"] },
       });
       return JSON.stringify({
-        count: items.length,
-        items: items.slice(0, 20),
+        count: page.total,
+        items: page.items,
       });
     },
     {
@@ -520,7 +520,7 @@ export function buildCoachTools(ctx: AgentSessionContext) {
         selectedParagraphIndex: ctx.selectedParagraphIndex,
         viewLens: ctx.viewLens,
         translateOpen: ctx.translateOpen,
-        libraryPreview: listArticles().slice(0, 8),
+        libraryPreview: listArticles(8),
       });
     },
     {

@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
 import type { DrillLevel, DrillLexItem, DrillListItem, SavedDrill, SlotGrade } from "@/lib/drill/parse";
+import { clampPage, type Page } from "@/lib/db/page";
 import { drillLevelSpec } from "@/lib/drill/parse";
 import type {
   Article,
@@ -55,6 +56,7 @@ function ensureDrillTable(db: Database.Database): void {
       label TEXT NOT NULL UNIQUE COLLATE NOCASE,
       created_at TEXT NOT NULL
     );
+    CREATE INDEX IF NOT EXISTS idx_drills_created ON drills(created_at);
   `);
   const columns = db.prepare(`PRAGMA table_info(drills)`).all() as Array<{ name: string }>;
   if (!columns.some((column) => column.name === "difficulty")) {
@@ -79,9 +81,17 @@ function randomTagId(): string {
   return `tag_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function ensureCoreIndexes(db: Database.Database): void {
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_articles_updated ON articles(updated_at);
+    CREATE INDEX IF NOT EXISTS idx_wrong_created ON wrong_items(created_at);
+  `);
+}
+
 export function getDb(): Database.Database {
   if (globalForDb.__englishCoachDb) {
     ensureDrillTable(globalForDb.__englishCoachDb);
+    ensureCoreIndexes(globalForDb.__englishCoachDb);
     return globalForDb.__englishCoachDb;
   }
   const db = new Database(resolveDbPath());
@@ -143,6 +153,7 @@ export function getDb(): Database.Database {
     );
   `);
   ensureDrillTable(db);
+  ensureCoreIndexes(db);
   globalForDb.__englishCoachDb = db;
   return db;
 }
@@ -184,31 +195,53 @@ export function saveArticle(input: {
   return getArticle(input.id)!;
 }
 
-export function listArticles(): Array<{
+export interface ArticleListItem {
   id: string;
   url: string | null;
   title: string;
   createdAt: string;
   updatedAt: string;
   paragraphCount: number;
-}> {
-  const db = getDb();
-  const rows = db
-    .prepare(
-      `SELECT a.id, a.url, a.title, a.created_at AS createdAt, a.updated_at AS updatedAt,
+}
+
+const ARTICLE_LIST = `SELECT a.id, a.url, a.title, a.created_at AS createdAt, a.updated_at AS updatedAt,
               (SELECT COUNT(*) FROM paragraphs p WHERE p.article_id = a.id) AS paragraphCount
-       FROM articles a
-       ORDER BY a.updated_at DESC`,
-    )
-    .all() as Array<{
-    id: string;
-    url: string | null;
-    title: string;
-    createdAt: string;
-    updatedAt: string;
-    paragraphCount: number;
-  }>;
-  return rows;
+       FROM articles a`;
+
+export function listArticles(limit = 8): ArticleListItem[] {
+  const size = Math.min(Math.max(Math.floor(limit) || 8, 1), 50);
+  return getDb().prepare(`${ARTICLE_LIST} ORDER BY a.updated_at DESC LIMIT ?`).all(size) as ArticleListItem[];
+}
+
+export function searchArticles(query: string, limit = 20): ArticleListItem[] {
+  const needle = query.trim().replace(/[%_]/g, "");
+  if (!needle) return listArticles(limit);
+  const size = Math.min(Math.max(Math.floor(limit) || 20, 1), 50);
+  return getDb()
+    .prepare(`${ARTICLE_LIST} WHERE a.title LIKE ? ORDER BY a.updated_at DESC LIMIT ?`)
+    .all(`%${needle}%`, size) as ArticleListItem[];
+}
+
+/** Match an id, then an exact title, then a title fragment. */
+export function lookupArticle(query: string): ArticleListItem | null {
+  const needle = query.trim();
+  if (!needle) return null;
+  const db = getDb();
+  const byId = db.prepare(`${ARTICLE_LIST} WHERE a.id = ?`).get(needle) as ArticleListItem | undefined;
+  if (byId) return byId;
+  const exact = db.prepare(`${ARTICLE_LIST} WHERE a.title = ? COLLATE NOCASE`).get(needle) as ArticleListItem | undefined;
+  if (exact) return exact;
+  return searchArticles(needle, 1)[0] ?? null;
+}
+
+export function listArticlesPage(page: number, pageSize = 7): Page<ArticleListItem> {
+  const db = getDb();
+  const total = (db.prepare(`SELECT COUNT(*) AS n FROM articles`).get() as { n: number }).n;
+  const query = clampPage(page, pageSize, total);
+  const items = db
+    .prepare(`${ARTICLE_LIST} ORDER BY a.updated_at DESC LIMIT ? OFFSET ?`)
+    .all(query.pageSize, query.offset) as ArticleListItem[];
+  return { items, total, page: query.page, pageSize: query.pageSize };
 }
 
 export function deleteArticle(id: string): boolean {
@@ -453,17 +486,24 @@ export function addWrongItem(input: Omit<WrongBookItem, "createdAt" | "resolvedA
   };
 }
 
-export function listWrongItems(unresolvedOnly = true): WrongBookItem[] {
-  const sql = unresolvedOnly
-    ? `SELECT id, article_id AS articleId, paragraph_index AS paragraphIndex, mode, snippet,
+const WRONG_LIST = `SELECT id, article_id AS articleId, paragraph_index AS paragraphIndex, mode, snippet,
               user_answer AS userAnswer, expected_or_hint AS expectedOrHint, note,
               created_at AS createdAt, resolved_at AS resolvedAt
-       FROM wrong_items WHERE resolved_at IS NULL ORDER BY created_at DESC`
-    : `SELECT id, article_id AS articleId, paragraph_index AS paragraphIndex, mode, snippet,
-              user_answer AS userAnswer, expected_or_hint AS expectedOrHint, note,
-              created_at AS createdAt, resolved_at AS resolvedAt
-       FROM wrong_items ORDER BY created_at DESC`;
-  return getDb().prepare(sql).all() as WrongBookItem[];
+       FROM wrong_items`;
+
+export function listWrongItemsPage(page: number, pageSize = 6, unresolvedOnly = true): Page<WrongBookItem> {
+  const db = getDb();
+  const where = unresolvedOnly ? `WHERE resolved_at IS NULL` : ``;
+  const total = (db.prepare(`SELECT COUNT(*) AS n FROM wrong_items ${where}`).get() as { n: number }).n;
+  const query = clampPage(page, pageSize, total);
+  const items = db
+    .prepare(`${WRONG_LIST} ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`)
+    .all(query.pageSize, query.offset) as WrongBookItem[];
+  return { items, total, page: query.page, pageSize: query.pageSize };
+}
+
+export function listWrongItems(unresolvedOnly = true, limit = 20): WrongBookItem[] {
+  return listWrongItemsPage(1, limit, unresolvedOnly).items;
 }
 
 export function getWrongItem(id: string): WrongBookItem | null {
@@ -617,20 +657,16 @@ export function updateDrillResult(
     .run(JSON.stringify(attempt), JSON.stringify(grades), summary, id);
 }
 
-export function listDrills(limit = 200): DrillListItem[] {
-  const rows = getDb()
-    .prepare(
-      `SELECT id, industry, difficulty, zh, created_at AS createdAt, grades_json AS gradesJson
-       FROM drills ORDER BY created_at DESC LIMIT ?`,
-    )
-    .all(limit) as Array<{
+function mapDrillList(
+  rows: Array<{
     id: string;
     industry: string;
     difficulty: string | null;
     zh: string;
     createdAt: string;
     gradesJson: string | null;
-  }>;
+  }>,
+): DrillListItem[] {
   return rows.map((row) => ({
     id: row.id,
     industry: row.industry,
@@ -639,6 +675,36 @@ export function listDrills(limit = 200): DrillListItem[] {
     createdAt: row.createdAt,
     graded: Boolean(row.gradesJson),
   }));
+}
+
+const DRILL_LIST = `SELECT id, industry, difficulty, zh, created_at AS createdAt, grades_json AS gradesJson FROM drills`;
+
+export function listDrills(limit = 40): DrillListItem[] {
+  const size = Math.min(Math.max(Math.floor(limit) || 40, 1), 200);
+  const rows = getDb().prepare(`${DRILL_LIST} ORDER BY created_at DESC LIMIT ?`).all(size) as Array<{
+    id: string;
+    industry: string;
+    difficulty: string | null;
+    zh: string;
+    createdAt: string;
+    gradesJson: string | null;
+  }>;
+  return mapDrillList(rows);
+}
+
+export function listDrillsPage(page: number, pageSize = 7): Page<DrillListItem> {
+  const db = getDb();
+  const total = (db.prepare(`SELECT COUNT(*) AS n FROM drills`).get() as { n: number }).n;
+  const query = clampPage(page, pageSize, total);
+  const rows = db.prepare(`${DRILL_LIST} ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(query.pageSize, query.offset) as Array<{
+    id: string;
+    industry: string;
+    difficulty: string | null;
+    zh: string;
+    createdAt: string;
+    gradesJson: string | null;
+  }>;
+  return { items: mapDrillList(rows), total, page: query.page, pageSize: query.pageSize };
 }
 
 export function getDrill(id: string): SavedDrill | null {

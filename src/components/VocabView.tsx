@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { BookLoader } from "@/components/ui/loader";
-import { Pager, pageSlice } from "@/components/ui/pager";
+import { Pager } from "@/components/ui/pager";
 import { speak, useSpeech } from "@/lib/speech";
 import { useVocab } from "@/lib/store/vocab";
 import { useWorkspace } from "@/lib/store/workspace";
@@ -212,38 +212,60 @@ const PAGE_SIZE = 10;
 export function VocabView() {
   const [tab, setTab] = useState<Tab>("review");
   const [words, setWords] = useState<VocabWord[]>([]);
+  const [listTotal, setListTotal] = useState(0);
   const [query, setQuery] = useState("");
   const [session, setSession] = useState<VocabWord[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
+  const [reloadKey, setReloadKey] = useState(0);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const { total, due, mastered, apply } = useVocab();
 
-  const loadAll = useCallback(
-    async (q: string) => {
-      setLoading(true);
-      try {
-        const res = await fetch(`/api/vocab?view=all&q=${encodeURIComponent(q)}`, { cache: "no-store" });
-        if (res.ok) {
-          const data = (await res.json()) as { words: VocabWord[]; summary: VocabSummary };
-          setWords(data.words);
-          apply(data.summary);
-        }
-      } finally {
-        setLoading(false);
+  const loadAll = useCallback(async (q: string, nextPage: number) => {
+    setLoading(true);
+    try {
+      const res = await fetch(
+        `/api/vocab?view=all&q=${encodeURIComponent(q)}&page=${nextPage}&pageSize=${PAGE_SIZE}`,
+        { cache: "no-store" },
+      );
+      if (res.ok) {
+        const data = (await res.json()) as {
+          words: VocabWord[];
+          total: number;
+          page: number;
+          summary: { total: number; due: number; mastered: number };
+        };
+        setWords(data.words);
+        setListTotal(data.total);
+        if (data.page !== nextPage) setPage(data.page);
+        useVocab.setState({
+          total: data.summary.total,
+          due: data.summary.due,
+          mastered: data.summary.mastered,
+        });
       }
-    },
-    [apply],
-  );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (tab !== "all") return;
-    const t = setTimeout(() => void loadAll(query), 180);
-    return () => clearTimeout(t);
-  }, [tab, query, loadAll]);
+    const timer = setTimeout(() => void loadAll(query, page), 180);
+    return () => clearTimeout(timer);
+  }, [tab, query, page, reloadKey, loadAll]);
 
   useEffect(() => {
-    void useVocab.getState().refresh().finally(() => setLoading(false));
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void useVocab.getState().refresh().finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, []);
 
   const pageCommand = useWorkspace((s) => s.pageCommand);
@@ -253,7 +275,7 @@ export function VocabView() {
     if (vocab?.tab) setTab(vocab.tab);
     if (vocab?.query !== undefined) setQuery(vocab.query);
     if (vocab?.startReview) void startReview();
-    else if (pageCommand.refresh?.includes("vocab") && tab === "all") void loadAll(vocab?.query ?? query);
+    else if (pageCommand.refresh?.includes("vocab") && tab === "all") setReloadKey((key) => key + 1);
   }, [pageCommand]);
 
   async function startReview() {
@@ -269,9 +291,13 @@ export function VocabView() {
       setConfirmId(id);
       return;
     }
-    await fetch(`/api/vocab?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    const res = await fetch(`/api/vocab?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (res.ok) {
+      const data = (await res.json()) as { summary?: VocabSummary };
+      if (data.summary) apply(data.summary);
+    }
     setConfirmId(null);
-    await loadAll(query);
+    setReloadKey((key) => key + 1);
   }
 
   const learning = useMemo(() => Math.max(total - mastered, 0), [total, mastered]);
@@ -378,8 +404,8 @@ export function VocabView() {
               <EmptyState />
             )
           ) : (
-            <ul className="grid grid-cols-[minmax(0,1fr)] gap-2">
-              {pageSlice(words, page, PAGE_SIZE).map((w, i) => {
+            <ul className={`grid grid-cols-[minmax(0,1fr)] gap-2 ${loading ? "opacity-60" : ""}`}>
+              {words.map((w, i) => {
                 const stage = stageOf(w.box);
                 return (
                   <motion.li
@@ -427,7 +453,7 @@ export function VocabView() {
               })}
             </ul>
           )}
-          <Pager page={page} total={words.length} pageSize={PAGE_SIZE} onPageChange={setPage} />
+          <Pager page={page} total={listTotal} pageSize={PAGE_SIZE} onPageChange={setPage} />
         </div>
       )}
     </section>
