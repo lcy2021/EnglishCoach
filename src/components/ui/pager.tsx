@@ -5,11 +5,6 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-/** 客户端分页：返回当前页的切片，并在数据变少时自动回退页码。 */
-export function pageSlice<T>(items: T[], page: number, pageSize: number): T[] {
-  return items.slice((page - 1) * pageSize, page * pageSize);
-}
-
 export function pageCount(total: number, pageSize: number): number {
   return Math.max(1, Math.ceil(total / pageSize));
 }

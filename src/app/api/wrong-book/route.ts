@@ -1,15 +1,23 @@
 import { NextResponse } from "next/server";
-import {
-  listWrongItems,
-  resolveWrongItem,
-} from "@/lib/db";
+import { listWrongItemsPage, resolveWrongItem } from "@/lib/db";
+import { readPage } from "@/lib/db/page";
 
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const unresolvedOnly = searchParams.get("all") !== "1";
-  return NextResponse.json({ items: listWrongItems(unresolvedOnly) });
+  const result = listWrongItemsPage(
+    readPage(searchParams.get("page"), 1),
+    readPage(searchParams.get("pageSize"), 6),
+    unresolvedOnly,
+  );
+  return NextResponse.json({
+    items: result.items,
+    total: result.total,
+    page: result.page,
+    pageSize: result.pageSize,
+  });
 }
 
 export async function POST(request: Request) {
