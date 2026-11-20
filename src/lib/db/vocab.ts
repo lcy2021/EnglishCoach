@@ -1,4 +1,5 @@
 import { getDb } from "@/lib/db";
+import { clampPage, type Page } from "@/lib/db/page";
 import { MASTERED_BOX, schedule, type Rating, type VocabSummary, type VocabWord } from "@/lib/vocab/srs";
 
 function ensureVocabTable(): void {
@@ -19,6 +20,7 @@ function ensureVocabTable(): void {
       created_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_vocab_due ON vocab(due_at);
+    CREATE INDEX IF NOT EXISTS idx_vocab_created ON vocab(created_at);
   `);
 }
 
@@ -29,7 +31,7 @@ function newId(): string {
   return `v_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export function vocabSummary(): VocabSummary {
+export function vocabCounts(): Pick<VocabSummary, "total" | "due" | "mastered"> {
   ensureVocabTable();
   const db = getDb();
   const now = new Date().toISOString();
@@ -38,21 +40,46 @@ export function vocabSummary(): VocabSummary {
   const mastered = (
     db.prepare(`SELECT COUNT(*) AS n FROM vocab WHERE box >= ?`).get(MASTERED_BOX) as { n: number }
   ).n;
-  const keys = (db.prepare(`SELECT lower(text) AS t FROM vocab`).all() as Array<{ t: string }>).map((r) => r.t);
-  return { total, due, mastered, keys };
+  return { total, due, mastered };
 }
 
-export function listVocab(query = "", limit = 500): VocabWord[] {
+export function vocabSummary(): VocabSummary {
+  const counts = vocabCounts();
+  const keys = (getDb().prepare(`SELECT lower(text) AS t FROM vocab`).all() as Array<{ t: string }>).map((row) => row.t);
+  return { ...counts, keys };
+}
+
+function vocabLike(query: string): string | null {
+  const needle = query.trim().replace(/[%_]/g, "");
+  return needle ? `%${needle}%` : null;
+}
+
+export function listVocabPage(query = "", page = 1, pageSize = 10): Page<VocabWord> {
   ensureVocabTable();
-  const q = query.trim();
   const db = getDb();
-  if (q) {
-    const like = `%${q.replace(/[%_]/g, "")}%`;
-    return db
-      .prepare(`${SELECT} WHERE text LIKE ? OR gloss LIKE ? ORDER BY created_at DESC LIMIT ?`)
-      .all(like, like, limit) as VocabWord[];
-  }
-  return db.prepare(`${SELECT} ORDER BY created_at DESC LIMIT ?`).all(limit) as VocabWord[];
+  const like = vocabLike(query);
+  const where = like ? `WHERE text LIKE ? OR gloss LIKE ?` : ``;
+  const args = like ? [like, like] : [];
+  const total = (db.prepare(`SELECT COUNT(*) AS n FROM vocab ${where}`).get(...args) as { n: number }).n;
+  const clamped = clampPage(page, pageSize, total);
+  const items = db
+    .prepare(`${SELECT} ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`)
+    .all(...args, clamped.pageSize, clamped.offset) as VocabWord[];
+  return { items, total, page: clamped.page, pageSize: clamped.pageSize };
+}
+
+export function listVocab(query = "", limit = 20): VocabWord[] {
+  return listVocabPage(query, 1, limit).items;
+}
+
+export function findVocab(query: string): VocabWord | null {
+  ensureVocabTable();
+  const needle = query.trim();
+  if (!needle) return null;
+  const row = getDb().prepare(`${SELECT} WHERE id = ? OR text = ? COLLATE NOCASE LIMIT 1`).get(needle, needle) as
+    | VocabWord
+    | undefined;
+  return row ?? null;
 }
 
 export function dueVocab(limit = 20): VocabWord[] {

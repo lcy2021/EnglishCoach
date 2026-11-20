@@ -6,10 +6,12 @@ import {
   ToolMessage,
   type BaseMessage,
 } from "@langchain/core/messages";
+import { formatOpenParagraph } from "@/lib/agent/paragraph-context";
 import { COACH_SYSTEM_PROMPT } from "@/lib/agent/prompts/coach";
 import { createAgentSessionContext } from "@/lib/agent/context";
 import { getChatModel } from "@/lib/agent/model";
 import { buildCoachTools } from "@/lib/agent/tools";
+import { getArticle } from "@/lib/db";
 import type { AppRoute, ViewLens, WorkspacePatch } from "@/lib/types";
 
 export interface RunCoachInput {
@@ -98,8 +100,11 @@ export async function* streamCoachAgent(
     ]),
   );
   const model = getChatModel(true, "chat").bindTools(tools);
+  const article = input.workspace.articleId ? getArticle(input.workspace.articleId) : null;
+  const paragraphNote = formatOpenParagraph(article, input.workspace.selectedParagraphIndex);
+  const system = paragraphNote ? `${COACH_SYSTEM_PROMPT}\n\n${paragraphNote}` : COACH_SYSTEM_PROMPT;
   const conversation: BaseMessage[] = [
-    new SystemMessage(COACH_SYSTEM_PROMPT),
+    new SystemMessage(system),
     ...input.messages.map((m) =>
       m.role === "user" ? new HumanMessage(m.content) : new AIMessage(m.content),
     ),

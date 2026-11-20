@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { BookLoader } from "@/components/ui/loader";
-import { Pager, pageSlice } from "@/components/ui/pager";
+import { Pager } from "@/components/ui/pager";
 import type { DrillListItem } from "@/lib/drill/parse";
 import { useWorkspace } from "@/lib/store/workspace";
 
@@ -23,26 +23,37 @@ function formatYmd(iso: string): string {
 
 export function DrillBankView() {
   const [drills, setDrills] = useState<DrillListItem[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
+  const [reloadKey, setReloadKey] = useState(0);
   const setRoute = useWorkspace((s) => s.setRoute);
   const applyPatch = useWorkspace((s) => s.applyPatch);
 
-  async function load() {
-    const res = await fetch("/api/drill", { cache: "no-store" });
-    const data = (await res.json()) as { drills?: DrillListItem[] };
-    setDrills(data.drills ?? []);
-    setLoading(false);
-  }
-
   useEffect(() => {
-    void load();
-  }, []);
+    let cancelled = false;
+    setLoading(true);
+    void (async () => {
+      try {
+        const res = await fetch(`/api/drill?page=${page}&pageSize=${PAGE_SIZE}`, { cache: "no-store" });
+        const data = (await res.json()) as { drills?: DrillListItem[]; total?: number; page?: number };
+        if (cancelled) return;
+        setDrills(data.drills ?? []);
+        setTotal(data.total ?? 0);
+        if (data.page && data.page !== page) setPage(data.page);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [page, reloadKey]);
 
   const pageCommand = useWorkspace((s) => s.pageCommand);
   useEffect(() => {
     if (!pageCommand?.refresh?.includes("drill-bank") && !pageCommand?.refresh?.includes("drill")) return;
-    void load();
+    setReloadKey((key) => key + 1);
   }, [pageCommand]);
 
   function openDrill(id: string) {
@@ -62,7 +73,7 @@ export function DrillBankView() {
         <h1 className="text-3xl font-bold tracking-tight">题目</h1>
         <p className="mt-1 text-muted-foreground">做过的题都在这里，点开可以重做。</p>
       </header>
-      {loading ? (
+      {loading && drills.length === 0 ? (
         <BookLoader label="正在翻找你的题目" />
       ) : drills.length === 0 ? (
         <Empty className="rounded-2xl border-2 border-dashed">
@@ -78,8 +89,8 @@ export function DrillBankView() {
           </Button>
         </Empty>
       ) : (
-        <ul className="grid grid-cols-[minmax(0,1fr)] gap-3">
-          {pageSlice(drills, page, PAGE_SIZE).map((item, i) => (
+        <ul className={`grid grid-cols-[minmax(0,1fr)] gap-3 ${loading ? "opacity-60" : ""}`}>
+          {drills.map((item, i) => (
             <motion.li
               key={item.id}
               className="min-w-0"
@@ -109,9 +120,7 @@ export function DrillBankView() {
           ))}
         </ul>
       )}
-      {!loading ? (
-        <Pager page={page} total={drills.length} pageSize={PAGE_SIZE} onPageChange={setPage} />
-      ) : null}
+      {total > 0 ? <Pager page={page} total={total} pageSize={PAGE_SIZE} onPageChange={setPage} /> : null}
     </section>
   );
 }

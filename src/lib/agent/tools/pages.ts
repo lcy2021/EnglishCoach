@@ -7,14 +7,15 @@ import {
   addDrillTag,
   deleteArticle,
   getDrill,
-  listArticles,
   listDrillTags,
+  lookupArticle,
+  searchArticles,
   listDrills,
   saveDrill,
   updateDrillResult,
 } from "@/lib/db";
 import { getStats } from "@/lib/db/stats";
-import { addVocab, deleteVocab, dueVocab, listVocab, reviewVocab, vocabSummary } from "@/lib/db/vocab";
+import { addVocab, deleteVocab, dueVocab, findVocab, listVocab, reviewVocab, vocabSummary } from "@/lib/db/vocab";
 import { createDrill, gradeDrill } from "@/lib/drill/drill";
 import { DRILL_LEVELS, type DrillPrompt } from "@/lib/drill/parse";
 import { GOAL_CHOICES } from "@/lib/goals";
@@ -57,23 +58,6 @@ function showPage(
   });
 }
 
-function findArticle(query: string) {
-  const needle = query.trim().toLowerCase();
-  const articles = listArticles();
-  return (
-    articles.find((item) => item.id === query || item.title.toLowerCase() === needle) ??
-    articles.find((item) => item.title.toLowerCase().includes(needle)) ??
-    null
-  );
-}
-
-function findVocab(query: string) {
-  const needle = query.trim().toLowerCase();
-  return (
-    listVocab("", 500).find((word) => word.id === query || word.text.toLowerCase() === needle) ?? null
-  );
-}
-
 const LEVEL_LABELS = ["初中", "高中", "四级", "六级", "考研", "雅思/托福"] as const;
 
 function compactWord(word: { id: string; text: string; gloss: string; box: number; dueAt: string }) {
@@ -110,11 +94,7 @@ export function buildPageTools(ctx: AgentSessionContext) {
 
   const list_library = tool(
     async ({ query }) => {
-      const needle = (query ?? "").trim().toLowerCase();
-      const articles = listArticles()
-        .filter((item) => !needle || item.title.toLowerCase().includes(needle))
-        .slice(0, 20)
-        .map((item) => ({
+      const articles = searchArticles(query ?? "", 20).map((item) => ({
           id: item.id,
           title: item.title,
           paragraphCount: item.paragraphCount,
@@ -132,9 +112,7 @@ export function buildPageTools(ctx: AgentSessionContext) {
 
   const delete_article = tool(
     async ({ articleId, title }) => {
-      const target = articleId
-        ? listArticles().find((item) => item.id === articleId) ?? null
-        : findArticle(title ?? "");
+      const target = lookupArticle(articleId || title || "");
       if (!target) throw new Error("找不到这篇文章");
       if (!deleteArticle(target.id)) throw new Error("删除失败");
       const cleared = ctx.articleId === target.id;
@@ -387,11 +365,15 @@ export function buildPageTools(ctx: AgentSessionContext) {
 
   const get_stats = tool(
     async ({ days }) => {
-      const span = days === 7 || days === 30 ? days : 14;
+      const span = days === 0 || days === 7 || days === 14 || days === 30 ? days : 14;
       const stats = getStats(span);
+      const tokens = stats.window.input + stats.window.output;
       showPage(ctx, "stats", { statsDays: span, refresh: ["stats"] }, { statusMessage: "已打开学习总览" });
       return JSON.stringify({
         days: span,
+        tokens,
+        input: stats.window.input,
+        output: stats.window.output,
         today: stats.today,
         window: stats.window,
         allTime: stats.allTime,
@@ -400,9 +382,13 @@ export function buildPageTools(ctx: AgentSessionContext) {
     },
     {
       name: "get_stats",
-      description: "Open 学习总览 and return today, the selected window, and all-time practice numbers.",
+      description:
+        "Open the stats page on one range and return the token total shown there. Pass days 0 for the all-time total (the page selects the all-time range). Pass 7, 14, or 30 for that many days; omit days for 14. tokens is input plus output for that range and matches the page. For days 0, tokens equals allTime.tokens. Quote tokens. Never quote today's tokens for an all-time question, and never say the total is unknown.",
       schema: z.object({
-        days: z.union([z.literal(7), z.literal(14), z.literal(30)]).optional(),
+        days: z
+          .union([z.literal(0), z.literal(7), z.literal(14), z.literal(30)])
+          .optional()
+          .describe("0 is all-time. 7, 14, or 30 is that window. Omit for 14 days."),
       }),
     },
   );

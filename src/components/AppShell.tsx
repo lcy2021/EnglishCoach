@@ -14,8 +14,10 @@ import {
   SpellCheck,
 } from "lucide-react";
 import { motion, MotionConfig } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { useWorkspace, type AppRoute } from "@/lib/store/workspace";
+import { pathFromRoute, routeFromPath } from "@/lib/route-path";
 import { GoalRing } from "@/components/GoalRing";
 import { useGoal } from "@/lib/store/goal";
 import { OwlPet, pokeOwl } from "@/components/OwlPet";
@@ -183,9 +185,35 @@ function NavButton({
 }
 
 export function AppShell() {
-  const route = useWorkspace((s) => s.route);
+  const pathname = usePathname();
+  const router = useRouter();
+  const route = routeFromPath(pathname);
+  const storeRoute = useWorkspace((s) => s.route);
   const chatOpen = useWorkspace((s) => s.chatOpen);
   const setRoute = useWorkspace((s) => s.setRoute);
+  const routeFromUrl = useRef(false);
+
+  // The address is the page. Refresh and the back button read it; clicks and the coach write it.
+  useLayoutEffect(() => {
+    const canonical = pathFromRoute(route);
+    if (canonical !== pathname) {
+      router.replace(canonical);
+      return;
+    }
+    if (useWorkspace.getState().route !== route) {
+      routeFromUrl.current = true;
+      useWorkspace.setState({ route });
+    }
+  }, [pathname, route, router]);
+
+  useEffect(() => {
+    if (routeFromUrl.current) {
+      routeFromUrl.current = false;
+      return;
+    }
+    const path = pathFromRoute(storeRoute);
+    if (path !== pathname) router.push(path);
+  }, [storeRoute, pathname, router]);
   const setChatOpen = useWorkspace((s) => s.setChatOpen);
   const dueWords = useVocab((s) => s.due);
   const refreshVocab = useVocab((s) => s.refresh);

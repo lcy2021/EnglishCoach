@@ -13,7 +13,6 @@ import {
   LegendKey,
   RankedBars,
   StackedColumns,
-  formatCount,
 } from "@/components/charts";
 import { cn } from "@/lib/utils";
 import { useWorkspace } from "@/lib/store/workspace";
@@ -40,6 +39,7 @@ const RANGES = [
   { days: 7, label: "近 7 天" },
   { days: 14, label: "近 14 天" },
   { days: 30, label: "近 30 天" },
+  { days: 0, label: "全部" },
 ] as const;
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -179,7 +179,7 @@ export function StatsView() {
   const pageCommand = useWorkspace((s) => s.pageCommand);
   useEffect(() => {
     const days = pageCommand?.statsDays;
-    if (days === 7 || days === 14 || days === 30) setRange(days);
+    if (days === 0 || days === 7 || days === 14 || days === 30) setRange(days);
   }, [pageCommand]);
 
   const today = stats?.today;
@@ -190,7 +190,7 @@ export function StatsView() {
 
   return (
     <section className="sheet !max-w-[820px] space-y-5">
-      <header className="flex flex-wrap items-end justify-between gap-3">
+      <header className="space-y-3">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">学习总览</h1>
           <p className="mt-1 text-muted-foreground">今天练了多少、答得怎么样、模型花了多少 token。</p>
@@ -268,20 +268,36 @@ export function StatsView() {
               </div>
             </div>
             <Tile
-              label="今日 Token"
-              value={formatCount(today.input + today.output)}
-              note={`输入 ${formatCount(today.input)} · 输出 ${formatCount(today.output)}`}
+              label={range === 0 ? "全部" : "今日 Token"}
+              value={(range === 0 ? stats.window.input + stats.window.output : today.input + today.output).toLocaleString("en-US")}
+              note={
+                range === 0
+                  ? `输入 ${stats.window.input.toLocaleString("en-US")} · 输出 ${stats.window.output.toLocaleString("en-US")}`
+                  : `输入 ${today.input.toLocaleString("en-US")} · 输出 ${today.output.toLocaleString("en-US")}`
+              }
             />
             <Tile label="连续练习" value={`${stats.streakDays} 天`} note={stats.streakDays > 0 ? "保持住!" : "今天做一题就开始计"} />
-            <Tile label={`${range} 天题数`} value={`${stats.window.drills}`} note={windowRate === null ? "还没有数据" : `全对率 ${windowRate}%`} />
-            <Tile label="累计题数" value={stats.allTime.drills.toLocaleString("en-US")} note={`${range} 天内调用模型 ${stats.window.calls} 次`} />
+            <Tile
+              label={range === 0 ? "累计题数" : `${range} 天题数`}
+              value={`${stats.window.drills}`}
+              note={windowRate === null ? "还没有数据" : `全对率 ${windowRate}%`}
+            />
+            {range === 0 ? (
+              <Tile label="模型调用" value={stats.window.calls.toLocaleString("en-US")} note="全部记录" />
+            ) : (
+              <Tile
+                label="累计题数"
+                value={stats.allTime.drills.toLocaleString("en-US")}
+                note={`${range} 天内调用模型 ${stats.window.calls} 次`}
+              />
+            )}
           </div>
 
           <WeeklyReport />
 
           <ChartCard
             title="每日练习"
-            subtitle={`近 ${range} 天批改过的题`}
+            subtitle={range === 0 ? "全部批改过的题" : `近 ${range} 天批改过的题`}
             dim={loading}
             legend={
               <>
@@ -315,7 +331,9 @@ export function StatsView() {
             title="Token 消耗"
             subtitle={
               hasTokens
-                ? `近 ${range} 天共 ${(stats.window.input + stats.window.output).toLocaleString("en-US")} tokens`
+                ? range === 0
+                  ? `总共 ${(stats.window.input + stats.window.output).toLocaleString("en-US")} tokens`
+                  : `近 ${range} 天共 ${(stats.window.input + stats.window.output).toLocaleString("en-US")} tokens`
                 : "从现在起,每次调用模型都会记录"
             }
             dim={loading}
@@ -349,7 +367,7 @@ export function StatsView() {
 
           <ChartCard
             title="Token 花在哪"
-            subtitle={`近 ${range} 天按功能统计,多的在上`}
+            subtitle={range === 0 ? "全部记录按功能统计,多的在上" : `近 ${range} 天按功能统计,多的在上`}
             dim={loading}
             table={
               <DataTable

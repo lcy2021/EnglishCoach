@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { addVocab, deleteVocab, dueVocab, listVocab, reviewVocab, vocabSummary } from "@/lib/db/vocab";
+import { addVocab, deleteVocab, dueVocab, listVocabPage, reviewVocab, vocabCounts, vocabSummary } from "@/lib/db/vocab";
+import { readPage } from "@/lib/db/page";
 import type { Rating } from "@/lib/vocab/srs";
 
 export const runtime = "nodejs";
@@ -15,7 +16,18 @@ export async function GET(request: Request) {
     return NextResponse.json({ words: dueVocab(limit), summary: vocabSummary() });
   }
   if (view === "all") {
-    return NextResponse.json({ words: listVocab(searchParams.get("q") ?? ""), summary: vocabSummary() });
+    const result = listVocabPage(
+      searchParams.get("q") ?? "",
+      readPage(searchParams.get("page"), 1),
+      readPage(searchParams.get("pageSize"), 10),
+    );
+    return NextResponse.json({
+      words: result.items,
+      total: result.total,
+      page: result.page,
+      pageSize: result.pageSize,
+      summary: vocabCounts(),
+    });
   }
   return NextResponse.json(vocabSummary());
 }
