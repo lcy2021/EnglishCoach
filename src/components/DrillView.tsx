@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { BookLoader } from "@/components/ui/loader";
 import { cn } from "@/lib/utils";
 import { speak as speakAloud, speechSupported, stopSpeaking } from "@/lib/speech";
 import { useToday } from "@/lib/store/today";
@@ -477,14 +478,14 @@ export function DrillView() {
         ) : null}
       </AnimatePresence>
 
-      {busy === "create" && !prompt ? (
-        <p className="text-center text-sm text-muted-foreground">正在为你出题…</p>
+      {busy === "create" ? (
+        <BookLoader label="正在为你出题" className="py-10" />
       ) : null}
       {error ? (
         <p className="rounded-xl bg-destructive/10 px-4 py-2.5 text-sm font-medium text-destructive">{error}</p>
       ) : null}
 
-      {prompt ? (
+      {prompt && busy !== "create" ? (
         <motion.div
           key={drillId ?? prompt.zh}
           initial={{ opacity: 0, y: 18, scale: 0.98 }}
