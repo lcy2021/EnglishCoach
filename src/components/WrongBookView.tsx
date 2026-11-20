@@ -27,20 +27,23 @@ export function WrongBookView() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    void (async () => {
-      try {
-        const res = await fetch(`/api/wrong-book?page=${page}&pageSize=${PAGE_SIZE}`, { cache: "no-store" });
-        const data = (await res.json()) as { items: WrongBookItem[]; total: number; page: number };
-        if (cancelled) return;
-        setItems(data.items ?? []);
-        setTotal(data.total ?? 0);
-        if (data.page && data.page !== page) setPage(data.page);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const res = await fetch(`/api/wrong-book?page=${page}&pageSize=${PAGE_SIZE}`, { cache: "no-store" });
+          const data = (await res.json()) as { items: WrongBookItem[]; total: number; page: number };
+          if (cancelled) return;
+          setItems(data.items ?? []);
+          setTotal(data.total ?? 0);
+          if (data.page && data.page !== page) setPage(data.page);
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
+      })();
+    }, 0);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, [page, reloadKey]);
 

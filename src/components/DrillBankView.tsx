@@ -33,20 +33,23 @@ export function DrillBankView() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    void (async () => {
-      try {
-        const res = await fetch(`/api/drill?page=${page}&pageSize=${PAGE_SIZE}`, { cache: "no-store" });
-        const data = (await res.json()) as { drills?: DrillListItem[]; total?: number; page?: number };
-        if (cancelled) return;
-        setDrills(data.drills ?? []);
-        setTotal(data.total ?? 0);
-        if (data.page && data.page !== page) setPage(data.page);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const res = await fetch(`/api/drill?page=${page}&pageSize=${PAGE_SIZE}`, { cache: "no-store" });
+          const data = (await res.json()) as { drills?: DrillListItem[]; total?: number; page?: number };
+          if (cancelled) return;
+          setDrills(data.drills ?? []);
+          setTotal(data.total ?? 0);
+          if (data.page && data.page !== page) setPage(data.page);
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
+      })();
+    }, 0);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, [page, reloadKey]);
 

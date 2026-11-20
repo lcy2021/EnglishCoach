@@ -256,7 +256,16 @@ export function VocabView() {
   }, [tab, query, page, reloadKey, loadAll]);
 
   useEffect(() => {
-    void useVocab.getState().refresh().finally(() => setLoading(false));
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void useVocab.getState().refresh().finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, []);
 
   const pageCommand = useWorkspace((s) => s.pageCommand);
@@ -282,7 +291,11 @@ export function VocabView() {
       setConfirmId(id);
       return;
     }
-    await fetch(`/api/vocab?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    const res = await fetch(`/api/vocab?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (res.ok) {
+      const data = (await res.json()) as { summary?: VocabSummary };
+      if (data.summary) apply(data.summary);
+    }
     setConfirmId(null);
     setReloadKey((key) => key + 1);
   }
