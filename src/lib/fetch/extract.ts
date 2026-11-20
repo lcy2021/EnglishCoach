@@ -71,19 +71,42 @@ export function extractFromHtml(
 
 const SCRAPLING_SCRIPT = path.join(process.cwd(), "scripts", "scrapling_fetch.py");
 
+const BROWSER_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+function humanizeFetchError(url: string, error: unknown): Error {
+  const message = error instanceof Error ? error.message : String(error);
+  const lowered = message.toLowerCase();
+  if (
+    lowered.includes("abort") ||
+    lowered.includes("timeout") ||
+    lowered.includes("timed out") ||
+    lowered.includes("could not connect") ||
+    lowered.includes("failed to connect") ||
+    lowered.includes("enotfound") ||
+    lowered.includes("econnrefused") ||
+    lowered.includes("econnreset")
+  ) {
+    return new Error(`无法连接到 ${url}（网络不通或站点不可达）`);
+  }
+  return error instanceof Error ? error : new Error(message);
+}
+
 function fetchWithReadability(url: string): Promise<ExtractedArticle> {
   return fetch(url, {
     headers: {
-      "User-Agent":
-        "Mozilla/5.0 (compatible; EnglishCoach/0.1; +https://localhost)",
+      "User-Agent": BROWSER_UA,
       Accept: "text/html,application/xhtml+xml",
     },
     redirect: "follow",
+    signal: AbortSignal.timeout(15_000),
   }).then(async (response) => {
     if (!response.ok) {
-      throw new Error(`Fetch failed (${response.status}) for ${url}`);
+      throw new Error(`网站返回 ${response.status}，无法拉取该页`);
     }
     return extractFromHtml(await response.text(), url);
+  }).catch((error) => {
+    throw humanizeFetchError(url, error);
   });
 }
 
@@ -100,8 +123,8 @@ function fetchWithScrapling(url: string): Promise<ExtractedArticle> {
     let stderr = "";
     const timer = setTimeout(() => {
       child.kill();
-      reject(new Error("Scrapling 抓取超时"));
-    }, 50_000);
+      reject(new Error("抓取超时，请换一篇文章或直接粘贴正文"));
+    }, 30_000);
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => {
@@ -126,7 +149,7 @@ function fetchWithScrapling(url: string): Promise<ExtractedArticle> {
           ? parsed.paragraphs.filter((item): item is string => typeof item === "string" && item.trim().length > 1)
           : [];
         if (paragraphs.length === 0) {
-          reject(new Error("Extracted article had no paragraphs."));
+          reject(new Error("页面里没有找到可用正文"));
           return;
         }
         resolve({
@@ -175,7 +198,10 @@ export async function fetchAndExtract(
       onProgress?.("换个方式再抓一次");
       return await tidy(await fetchWithReadability(url), onProgress);
     } catch {
-      throw scraplingError instanceof Error ? scraplingError : new Error("拉取失败");
+      throw humanizeFetchError(
+        url,
+        scraplingError instanceof Error ? scraplingError : new Error("拉取失败"),
+      );
     }
   }
 }

@@ -16,14 +16,59 @@ type Glyph = {
 };
 
 const MAX_GLYPHS = 48;
-const WAIT_FOR_TARGET_MS = 3000;
+const WAIT_FOR_TARGET_MS = 4000;
+
+function hideStyleId(key: string) {
+  return `english-coach-throw-hide-${CSS.escape(key)}`;
+}
+
+/** Hide the deliver node immediately so it does not flash while queued. */
+function ensureHidden(key: string) {
+  const id = hideStyleId(key);
+  if (document.getElementById(id)) return;
+  const style = document.createElement("style");
+  style.id = id;
+  style.textContent = `[data-deliver="${key}"]:not([data-delivered]){visibility:hidden}`;
+  document.head.appendChild(style);
+}
+
+function clearHidden(key: string) {
+  document.getElementById(hideStyleId(key))?.remove();
+}
 
 /**
  * Throw generated text from the coach panel into the page element that shows it.
  * `key` is a `data-deliver="<key>"` element; `text` is the generated field (used to find the exact characters).
+ * Multiple throws are queued so each paragraph can finish flying before the next starts.
  */
 export function throwText(key: string, text: string) {
+  if (typeof document !== "undefined") ensureHidden(key);
   window.dispatchEvent(new CustomEvent("english-coach:throw-text", { detail: { key, text } }));
+}
+
+/**
+ * Wait for the deliver node to mount (React commit), scroll it into view, then throw.
+ * Use this after applyPatch so explain / translation targets exist in the DOM.
+ */
+export function throwTextAfterPaint(key: string, text: string) {
+  if (typeof document === "undefined") return;
+  ensureHidden(key);
+  const started = performance.now();
+  const tick = () => {
+    const el = document.querySelector<HTMLElement>(`[data-deliver="${key}"]`);
+    if (!el) {
+      if (performance.now() - started < WAIT_FOR_TARGET_MS) {
+        requestAnimationFrame(tick);
+        return;
+      }
+      // Still dispatch so the hide style can clear via TextThrow timeout path.
+      throwText(key, text);
+      return;
+    }
+    el.scrollIntoView({ block: "nearest", behavior: "auto" });
+    requestAnimationFrame(() => throwText(key, text));
+  };
+  requestAnimationFrame(tick);
 }
 
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
@@ -39,33 +84,48 @@ function charCenter(node: Text, offset: number): Pt | null {
   range.setStart(node, offset);
   range.setEnd(node, offset + 1);
   const r = range.getBoundingClientRect();
+  // visibility:hidden still has a box; skip only collapsed / display:none nodes.
   return r.width > 0 && r.height > 0 ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null;
 }
 
-/** Find the generated field inside the target element(s) and pick characters spread evenly across it. */
+/** Find characters to animate inside the target element(s). */
 function pickChars(els: HTMLElement[], field: string): { ch: string; node: Text; offset: number }[] {
   const want = field.replace(/\s+/g, "");
   const view = document.querySelector(".stage")?.getBoundingClientRect();
   const all: { ch: string; node: Text; offset: number }[] = [];
+  const uniqueTarget = els.length === 1;
+
   for (const el of els) {
     const slots: { ch: string; node: Text; offset: number }[] = [];
-    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-    while (walker.nextNode()) {
-      const node = walker.currentNode as Text;
-      for (let i = 0; i < node.data.length; i++) {
-        if (!/\s/.test(node.data[i])) slots.push({ ch: node.data[i], node, offset: i });
+    // Prefer Chinese lines so interleaved EN/ZH pairs still match deliverZh.
+    const zhNodes = el.querySelectorAll(".zh");
+    const roots: Node[] = zhNodes.length > 0 ? [...zhNodes] : [el];
+    for (const root of roots) {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) {
+        const node = walker.currentNode as Text;
+        for (let i = 0; i < node.data.length; i++) {
+          if (!/\s/.test(node.data[i])) slots.push({ ch: node.data[i], node, offset: i });
+        }
       }
     }
-    const at = want ? slots.map((s) => s.ch).join("").indexOf(want) : -1;
-    const own = at >= 0 ? slots.slice(at, at + want.length) : slots;
+    const joined = slots.map((s) => s.ch).join("");
+    const at = want ? joined.indexOf(want) : -1;
+    // Unique deliver keys (explain-0, …): if exact match fails, still fly the whole node.
+    // Shared keys: only animate the matched span, never every earlier paragraph.
+    const own =
+      at >= 0 ? slots.slice(at, at + want.length) : want && !uniqueTarget ? [] : slots;
+
     for (const item of own) {
       if (all.length >= 1500) break;
       if (!/[\p{L}\p{N}]/u.test(item.ch)) continue;
       const c = charCenter(item.node, item.offset);
       if (!c) continue;
-      const top = view?.top ?? 0;
-      const bottom = view?.bottom ?? window.innerHeight;
-      if (c.y < top + 6 || c.y > bottom - 6 || c.x < 0 || c.x > window.innerWidth) continue;
+      if (!uniqueTarget) {
+        const top = view?.top ?? 0;
+        const bottom = view?.bottom ?? window.innerHeight;
+        if (c.y < top + 6 || c.y > bottom - 6 || c.x < 0 || c.x > window.innerWidth) continue;
+      }
       all.push(item);
     }
   }
@@ -80,16 +140,33 @@ export function TextThrow() {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx) return;
+
+    const queue: Array<{ key: string; text: string }> = [];
+    let busy = false;
     let stopCurrent: (() => void) | null = null;
 
-    const run = (key: string, text: string) => {
-      stopCurrent?.();
-      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const pump = () => {
+      if (busy) return;
+      const next = queue.shift();
+      if (!next) return;
+      busy = true;
+      run(next.key, next.text, () => {
+        busy = false;
+        pump();
+      });
+    };
 
-      // Hold the target back right away so it doesn't flash before the text arrives.
-      const style = document.createElement("style");
-      style.textContent = `[data-deliver="${key}"]:not([data-delivered]){visibility:hidden}`;
-      document.head.appendChild(style);
+    const run = (key: string, text: string, onDone: () => void) => {
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        clearHidden(key);
+        document
+          .querySelectorAll<HTMLElement>(`[data-deliver="${key}"]`)
+          .forEach((el) => el.setAttribute("data-delivered", ""));
+        onDone();
+        return;
+      }
+
+      ensureHidden(key);
 
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       canvas.width = window.innerWidth * dpr;
@@ -101,6 +178,7 @@ export function TextThrow() {
       let raf = 0;
       let els: HTMLElement[] = [];
       let glyphs: Glyph[] | null = null;
+      let scrolled = false;
       let startAt = 0;
       let revealed = false;
       let revealedAt = 0;
@@ -110,11 +188,12 @@ export function TextThrow() {
         if (cleanedUp) return;
         cleanedUp = true;
         cancelAnimationFrame(raf);
-        style.remove();
-        document.querySelectorAll("[data-delivered]").forEach((el) => el.removeAttribute("data-delivered"));
+        clearHidden(key);
+        for (const el of els) el.removeAttribute("data-delivered");
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         if (stopCurrent === cleanup) stopCurrent = null;
+        onDone();
       };
       stopCurrent = cleanup;
 
@@ -138,23 +217,37 @@ export function TextThrow() {
             raf = requestAnimationFrame(frame);
             return;
           }
+          if (!scrolled) {
+            scrolled = true;
+            els[0].scrollIntoView({ block: "nearest", behavior: "auto" });
+            raf = requestAnimationFrame(frame);
+            return;
+          }
           const coach = document.querySelector(".coach")?.getBoundingClientRect();
-          const origin = coach ?? new DOMRect(window.innerWidth - 40, window.innerHeight * 0.4, 30, window.innerHeight * 0.3);
+          const origin =
+            coach ?? new DOMRect(window.innerWidth - 40, window.innerHeight * 0.4, 30, window.innerHeight * 0.3);
           const picked = pickChars(els, text);
           glyphs = picked.map(({ ch, node, offset }) => {
             const to = charCenter(node, offset) ?? { x: origin.left, y: origin.top };
-            const from: Pt = { x: origin.left + origin.width * rand(0.15, 0.8), y: origin.top + origin.height * rand(0.45, 0.85) };
-            const cs = getComputedStyle(node.parentElement!);
+            const from: Pt = {
+              x: origin.left + origin.width * rand(0.15, 0.8),
+              y: origin.top + origin.height * rand(0.45, 0.85),
+            };
+            const parent = node.parentElement;
+            const cs = parent ? getComputedStyle(parent) : null;
             return {
               ch,
               node,
               offset,
               from,
-              ctrl: { x: (from.x + to.x) / 2 + rand(-40, 40), y: Math.min(from.y, to.y) - rand(60, 160) },
-              delay: rand(0, 0.5),
-              dur: rand(0.5, 0.7),
+              ctrl: {
+                x: (from.x + to.x) / 2 + rand(-40, 40),
+                y: Math.min(from.y, to.y) - rand(60, 160),
+              },
+              delay: rand(0, 0.45),
+              dur: rand(0.55, 0.85),
               rot: rand(-1.2, 1.2),
-              font: `700 ${cs.fontSize} ${cs.fontFamily}`,
+              font: `700 ${cs?.fontSize ?? "16px"} ${cs?.fontFamily ?? "sans-serif"}`,
             };
           });
           startAt = now;
@@ -172,12 +265,10 @@ export function TextThrow() {
           const k = Math.min(1, Math.max(0, (t - g.delay) / g.dur));
           if (k >= 1) landed++;
           if (t < g.delay) continue;
-          // the target spot is re-read every frame so it stays correct while the page is still settling
           const to = charCenter(g.node, g.offset);
           if (!to) continue;
           const p = bez(g.from, g.ctrl, to, easeOut(k));
           const fade = revealedAt ? Math.max(0, 1 - (now - revealedAt) / 260) : 1;
-          // comet trail: a few fading cyan -> violet sparks behind the glyph while it flies
           if (k < 1) {
             for (let i = 1; i <= 5; i++) {
               const tp = bez(g.from, g.ctrl, to, easeOut(Math.max(0, k - i * 0.04)));
@@ -200,8 +291,7 @@ export function TextThrow() {
             ctx.shadowColor = "#a78bfa";
             ctx.shadowBlur = 14;
           }
-          // neon: white outline, cyan -> violet gradient fill
-          const half = Math.max(10, parseFloat(g.font.split(" ")[1]) / 2);
+          const half = Math.max(10, parseFloat(g.font.split(" ")[1]) / 2 || 8);
           const grad = ctx.createLinearGradient(-half, -half, half, half);
           grad.addColorStop(0, "#06b6d4");
           grad.addColorStop(1, "#7c3aed");
@@ -214,7 +304,7 @@ export function TextThrow() {
           ctx.fillText(g.ch, 0, 0);
           ctx.restore();
         }
-        if (!revealed && (landed === glyphs.length || t > 2)) {
+        if (!revealed && (landed === glyphs.length || t > 2.2)) {
           reveal();
         }
         raf = requestAnimationFrame(frame);
@@ -224,12 +314,15 @@ export function TextThrow() {
 
     const handler = (event: Event) => {
       const d = (event as CustomEvent<{ key: string; text: string }>).detail;
-      if (d?.key) run(d.key, d.text ?? "");
+      if (!d?.key) return;
+      queue.push({ key: d.key, text: d.text ?? "" });
+      pump();
     };
     window.addEventListener("english-coach:throw-text", handler);
     return () => {
       window.removeEventListener("english-coach:throw-text", handler);
       stopCurrent?.();
+      queue.length = 0;
     };
   }, []);
 

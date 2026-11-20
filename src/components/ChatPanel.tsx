@@ -3,7 +3,7 @@
 import { useEffect, useMemo } from "react";
 import { ArrowUp, Eraser, PanelRightClose } from "lucide-react";
 import { Mascot, OwlMark } from "@/components/illustrations";
-import { throwText } from "@/components/TextThrow";
+import { throwTextAfterPaint } from "@/components/TextThrow";
 import { Button } from "@/components/ui/button";
 import {
   AssistantRuntimeProvider,
@@ -203,7 +203,9 @@ export function ChatPanel() {
           if (event.type === "patches") {
             for (const patch of event.patches) {
               live.applyPatch(patch);
-              if (patch.deliver) throwText(patch.deliver.target, patch.deliver.text);
+              if (patch.deliver) {
+                throwTextAfterPaint(patch.deliver.target, patch.deliver.text);
+              }
             }
           }
           if (event.type === "error") throw new Error(event.message);

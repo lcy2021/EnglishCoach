@@ -13,7 +13,6 @@ import {
   markExtraction,
   resolveWrongItem,
   saveArticle,
-  saveExplainCache,
   saveTranslation,
   updateParagraphZh,
 } from "@/lib/db";
@@ -26,7 +25,9 @@ import { buildPageTools } from "@/lib/agent/tools/pages";
 import { pushPatch, reportProgress } from "@/lib/agent/context";
 import { getChatModel } from "@/lib/agent/model";
 import { searchWeb } from "@/lib/agent/web-search";
-import type { Extraction, ViewLens } from "@/lib/types";
+import { streamExplainArticle } from "@/lib/explain/article";
+import { explainDeliverKey } from "@/lib/explain/deliver";
+import type { ViewLens } from "@/lib/types";
 
 function requireArticleId(ctx: AgentSessionContext): string {
   if (!ctx.articleId) {
@@ -283,102 +284,58 @@ export function buildCoachTools(ctx: AgentSessionContext) {
   const generate_explain = tool(
     async ({ paragraphFrom, paragraphTo }) => {
       const articleId = requireArticleId(ctx);
-      const article = getArticle(articleId);
-      if (!article) throw new Error("Article missing.");
+      const hasRange =
+        typeof paragraphFrom === "number" || typeof paragraphTo === "number";
+      const range = hasRange
+        ? { from: paragraphFrom, to: paragraphTo }
+        : undefined;
 
-      const from = paragraphFrom ?? 0;
-      const to = paragraphTo ?? article.paragraphs.length - 1;
-      const slice = article.paragraphs.filter(
-        (p) => p.index >= from && p.index <= to,
-      );
+      let done: {
+        article: NonNullable<ReturnType<typeof getArticle>>;
+        extractions: ReturnType<typeof listExtractions>;
+      } | null = null;
 
-      reportProgress(ctx, `正在为 ${slice.length} 个段落生成讲解`);
-      const model = getChatModel(false, "generate-explain");
-      const raw = await model.invoke([
-        {
-          role: "system",
-          content:
-            "Produce teaching notes for English learners. Reply ONLY JSON: {\"paragraphs\":[{\"index\":number,\"zh\":string}],\"phrases\":[{\"text\":string,\"gloss\":string,\"sentence\":string,\"paragraphIndex\":number}],\"words\":[{\"text\":string,\"gloss\":string,\"sentence\":string,\"paragraphIndex\":number}]}. Each zh is fluent written Chinese in complete sentences, never a word-for-word gloss.",
-        },
-        {
-          role: "user",
-          content: JSON.stringify({
-            title: article.title,
-            paragraphs: slice.map((p) => ({ index: p.index, text: p.text })),
-          }),
-        },
-      ]);
-      const content =
-        typeof raw.content === "string"
-          ? raw.content
-          : JSON.stringify(raw.content);
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error("Explain generation returned no JSON.");
-      const payload = JSON.parse(jsonMatch[0]) as {
-        paragraphs: Array<{ index: number; zh: string }>;
-        phrases: Array<{
-          text: string;
-          gloss: string;
-          sentence: string;
-          paragraphIndex: number;
-        }>;
-        words: Array<{
-          text: string;
-          gloss: string;
-          sentence: string;
-          paragraphIndex: number;
-        }>;
-      };
-
-      for (const p of payload.paragraphs ?? []) {
-        updateParagraphZh(articleId, p.index, p.zh);
+      for await (const event of streamExplainArticle(articleId, range)) {
+        if (event.type === "status") {
+          reportProgress(ctx, event.text);
+          continue;
+        }
+        if (event.type === "paragraph") {
+          pushPatch(ctx, {
+            article: event.article,
+            viewLens: "explain",
+            translateOpen: false,
+            explainExtractions: event.extractions,
+            deliver: {
+              target: explainDeliverKey(event.index),
+              text: event.zh,
+            },
+            statusMessage: `已完成 ${event.done}/${event.total} 段`,
+          });
+          continue;
+        }
+        done = { article: event.article, extractions: event.extractions };
+        pushPatch(ctx, {
+          article: event.article,
+          viewLens: "explain",
+          translateOpen: false,
+          explainExtractions: event.extractions,
+          statusMessage: "讲解已生成",
+        });
       }
 
-      const extractions: Extraction[] = [
-        ...(payload.phrases ?? []).map((p) => ({
-          id: randomUUID(),
-          articleId,
-          kind: "phrase" as const,
-          text: p.text,
-          gloss: p.gloss,
-          sentence: p.sentence,
-          paragraphIndex: p.paragraphIndex,
-          status: "unset" as const,
-        })),
-        ...(payload.words ?? []).map((w) => ({
-          id: randomUUID(),
-          articleId,
-          kind: "word" as const,
-          text: w.text,
-          gloss: w.gloss,
-          sentence: w.sentence,
-          paragraphIndex: w.paragraphIndex,
-          status: "unset" as const,
-        })),
-      ];
-
-      saveExplainCache(articleId, payload, extractions);
-      const refreshed = getArticle(articleId);
-      const listed = listExtractions(articleId);
-      pushPatch(ctx, {
-        article: refreshed,
-        viewLens: "explain",
-        explainExtractions: listed,
-        deliver: { target: "explain", text: listed.map((item) => `${item.text}${item.gloss}`).join("") },
-        statusMessage: "讲解已生成（中英对照 + 短语/生词）",
-      });
-
+      if (!done) throw new Error("讲解失败");
       return JSON.stringify({
         ok: true,
-        paragraphCount: payload.paragraphs?.length ?? 0,
-        phraseCount: payload.phrases?.length ?? 0,
-        wordCount: payload.words?.length ?? 0,
+        paragraphCount: done.article.paragraphs.filter((p) => p.zh).length,
+        phraseCount: done.extractions.filter((item) => item.kind === "phrase").length,
+        wordCount: done.extractions.filter((item) => item.kind === "word").length,
       });
     },
     {
       name: "generate_explain",
       description:
-        "Generate bilingual explain + phrase/word extraction for the open article (or a paragraph range).",
+        "Generate Chinese notes + phrase/word extraction for the WHOLE open article. Omit paragraphFrom/paragraphTo unless the user explicitly asks for only a paragraph range. For 本篇 / 全文讲解, call with no range args.",
       schema: z.object({
         paragraphFrom: z.number().int().nonnegative().optional(),
         paragraphTo: z.number().int().nonnegative().optional(),

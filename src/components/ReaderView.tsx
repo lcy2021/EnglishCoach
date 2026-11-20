@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
-  BookOpenText,
   ExternalLink,
   Languages,
   MessageCircleQuestion,
@@ -16,7 +15,7 @@ import {
 import { useWorkspace } from "@/lib/store/workspace";
 import { GlossableText } from "@/components/HoverWord";
 import { pokeOwl } from "@/components/OwlPet";
-import { throwText } from "@/components/TextThrow";
+import { throwText, throwTextAfterPaint } from "@/components/TextThrow";
 import { speak as speakAloud, speechSupported, stopSpeaking } from "@/lib/speech";
 import { SaveWordButton } from "@/components/SaveWordButton";
 import { ArticleLevel } from "@/components/ArticleLevel";
@@ -26,16 +25,19 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
+import { BookLoader } from "@/components/ui/loader";
+import { explainDeliverKey } from "@/lib/explain/deliver";
+import { joinZhLines, linesFromParagraph } from "@/lib/explain/sentences";
 
 export function ReaderView() {
   const article = useWorkspace((s) => s.article);
   const selected = useWorkspace((s) => s.selectedParagraphIndex);
-  const viewLens = useWorkspace((s) => s.viewLens);
   const translateOpen = useWorkspace((s) => s.translateOpen);
   const translateDraft = useWorkspace((s) => s.translateDraft);
   const feedback = useWorkspace((s) => s.translationFeedback);
   const extractions = useWorkspace((s) => s.explainExtractions);
+  const busy = useWorkspace((s) => s.busy);
+  const statusMessage = useWorkspace((s) => s.statusMessage);
   const setSelected = useWorkspace((s) => s.setSelectedParagraph);
   const setViewLens = useWorkspace((s) => s.setViewLens);
   const setTranslateOpen = useWorkspace((s) => s.setTranslateOpen);
@@ -43,13 +45,19 @@ export function ReaderView() {
   const applyPatch = useWorkspace((s) => s.applyPatch);
   const [url, setUrl] = useState("");
   const [fetching, setFetching] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [glossingIndex, setGlossingIndex] = useState<number | null>(null);
+  const [explainingAll, setExplainingAll] = useState(false);
   const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
   const setRoute = useWorkspace((s) => s.setRoute);
   const level = useLevel((s) => s.level);
   const highlight = useLevel((s) => s.highlight);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const articleId = article?.id ?? null;
+  const coachFetching =
+    busy &&
+    typeof statusMessage === "string" &&
+    /抓取|整理文章|梳理正文|换个方式/.test(statusMessage);
 
   // Rate the article against the learner's level (dictionary lookups, no model call).
   useEffect(() => {
@@ -126,8 +134,9 @@ export function ReaderView() {
   }, [article, selected, setTranslateDraft]);
 
   async function handleFetch() {
-    if (!url.trim()) return;
+    if (!url.trim() || fetching) return;
     setFetching(true);
+    setFetchError(null);
     try {
       const res = await fetch("/api/fetch", {
         method: "POST",
@@ -135,7 +144,8 @@ export function ReaderView() {
         body: JSON.stringify({ url: url.trim() }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Fetch failed");
+      if (!res.ok) throw new Error(data.error || "拉取失败");
+      setFetchError(null);
       applyPatch({
         article: data.article,
         selectedParagraphIndex: 0,
@@ -147,10 +157,9 @@ export function ReaderView() {
       const removed = Number(data.removed) || 0;
       pokeOwl("cheer", removed > 0 ? `拉取完成,帮你清掉了 ${removed} 行网页杂质` : "拉取完成,开始读吧!");
     } catch (error) {
-      applyPatch({
-        statusMessage:
-          error instanceof Error ? error.message : "拉取失败",
-      });
+      const message = error instanceof Error ? error.message : "拉取失败";
+      setFetchError(message);
+      applyPatch({ statusMessage: message });
     } finally {
       setFetching(false);
     }
@@ -171,7 +180,7 @@ export function ReaderView() {
   }
 
   async function explainWithModel(paragraphIndex: number) {
-    if (!article) return;
+    if (!article || explainingAll) return;
     setGlossingIndex(paragraphIndex);
     try {
       const res = await fetch("/api/explain", {
@@ -183,6 +192,7 @@ export function ReaderView() {
         error?: string;
         article?: typeof article;
         extractions?: typeof extractions;
+        deliverZh?: string;
       };
       if (!res.ok || !data.article) throw new Error(data.error || "讲解失败");
       applyPatch({
@@ -192,12 +202,113 @@ export function ReaderView() {
         explainExtractions: data.extractions ?? [],
         statusMessage: "这段的中文已写好",
       });
+      const paragraph = data.article.paragraphs.find((p) => p.index === paragraphIndex);
+      const zh =
+        data.deliverZh ||
+        (paragraph ? joinZhLines(linesFromParagraph(paragraph.text, paragraph.zh)) : "");
+      if (zh) throwTextAfterPaint(explainDeliverKey(paragraphIndex), zh);
     } catch (error) {
       applyPatch({
         statusMessage: error instanceof Error ? error.message : "讲解失败",
       });
     } finally {
       setGlossingIndex(null);
+    }
+  }
+
+  /**
+   * Full-article bilingual notes — one streaming model call (NDJSON per paragraph).
+   * Each finished paragraph lands on the page and throws into its own node.
+   */
+  async function explainArticleAll() {
+    if (!article || explainingAll || glossingIndex !== null) return;
+    setExplainingAll(true);
+    applyPatch({
+      viewLens: "explain",
+      translateOpen: false,
+      statusMessage: "正在生成本篇讲解",
+    });
+    try {
+      const res = await fetch("/api/explain", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+        },
+        body: JSON.stringify({ articleId: article.id }),
+      });
+      if (!res.ok || !res.body) {
+        const data = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(data?.error || "讲解失败");
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let gotParagraph = false;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const frames = buffer.split("\n\n");
+        buffer = frames.pop() ?? "";
+        for (const frame of frames) {
+          const line = frame
+            .split("\n")
+            .filter((item) => item.startsWith("data:"))
+            .map((item) => item.slice(5).trim())
+            .join("");
+          if (!line) continue;
+          const event = JSON.parse(line) as
+            | { type: "status"; text: string }
+            | {
+                type: "paragraph";
+                index: number;
+                zh: string;
+                article: typeof article;
+                extractions: typeof extractions;
+                done: number;
+                total: number;
+              }
+            | { type: "done"; article: typeof article; extractions: typeof extractions }
+            | { type: "error"; message: string };
+
+          if (event.type === "status") {
+            applyPatch({ statusMessage: event.text });
+          } else if (event.type === "paragraph") {
+            gotParagraph = true;
+            applyPatch({
+              article: event.article,
+              viewLens: "explain",
+              translateOpen: false,
+              explainExtractions: event.extractions,
+              statusMessage: `已完成 ${event.done}/${event.total} 段`,
+            });
+            if (event.zh) {
+              throwTextAfterPaint(explainDeliverKey(event.index), event.zh);
+            }
+          } else if (event.type === "done") {
+            applyPatch({
+              article: event.article,
+              viewLens: "explain",
+              translateOpen: false,
+              explainExtractions: event.extractions,
+              statusMessage: "本篇讲解已生成",
+            });
+          } else if (event.type === "error") {
+            throw new Error(event.message);
+          }
+        }
+      }
+
+      if (!gotParagraph) throw new Error("讲解没有写出中文");
+      pokeOwl("cheer", "本篇讲解写好了，可以对照着读");
+    } catch (error) {
+      applyPatch({
+        statusMessage: error instanceof Error ? error.message : "讲解失败",
+      });
+    } finally {
+      setExplainingAll(false);
     }
   }
 
@@ -208,6 +319,7 @@ export function ReaderView() {
   }
 
   if (!article) {
+    const loading = fetching || coachFetching;
     return (
       <section className="sheet space-y-6">
         <div className="space-y-2">
@@ -219,28 +331,45 @@ export function ReaderView() {
         <div className="flex items-center gap-2">
           <Input
             value={url}
-            onChange={(e) => setUrl(e.target.value)}
+            onChange={(e) => {
+              setUrl(e.target.value);
+              if (fetchError) setFetchError(null);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter") void handleFetch();
             }}
             placeholder="粘贴文章链接"
+            disabled={loading}
             className="h-11 rounded-xl border-2 px-4 text-base"
           />
-          <Button size="lg" className="h-11 px-5" disabled={fetching} onClick={handleFetch}>
+          <Button size="lg" className="h-11 px-5" disabled={loading || !url.trim()} onClick={handleFetch}>
             {fetching ? "拉取中" : "拉取"}
           </Button>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {[
-            "找一篇今天能读完的英文短文",
-            "找一篇可以逐段翻译的科普文",
-            "打开文章库里最近的一篇",
-          ].map((chip) => (
-            <Button key={chip} variant="outline" className="rounded-full" onClick={() => askCoach(chip)}>
-              {chip}
-            </Button>
-          ))}
-        </div>
+        {fetchError ? (
+          <p role="alert" className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            {fetchError}
+            <span className="mt-1 block text-muted-foreground">可以换一个链接，或把正文粘贴给右侧教练整理。</span>
+          </p>
+        ) : null}
+        {loading ? (
+          <BookLoader
+            label={fetching ? "正在拉取文章" : statusMessage || "正在整理文章"}
+            className="py-10"
+          />
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {[
+              "找一篇今天能读完的英文短文",
+              "找一篇可以逐段翻译的科普文",
+              "打开文章库里最近的一篇",
+            ].map((chip) => (
+              <Button key={chip} variant="outline" className="rounded-full" onClick={() => askCoach(chip)}>
+                {chip}
+              </Button>
+            ))}
+          </div>
+        )}
       </section>
     );
   }
@@ -268,7 +397,6 @@ export function ReaderView() {
       return null;
     }
   })();
-  const hasZh = article.paragraphs.some((p) => p.zh);
   const progress = selected === null ? 0 : (selected + 1) / Math.max(total, 1);
   const finished = selected !== null && selected === total - 1;
 
@@ -315,46 +443,29 @@ export function ReaderView() {
         </div>
         {analysis ? <ArticleLevel analysis={analysis} /> : null}
         <div className="flex flex-wrap items-center gap-2">
-          <div role="group" aria-label="显示方式" className="inline-flex rounded-xl border bg-card p-1">
-            {(
-              [
-                ["read", "仅英文", BookOpenText],
-                ["explain", "中英对照", Languages],
-              ] as const
-            ).map(([key, label, Icon]) => {
-              const on = key === "explain" ? viewLens === "explain" : viewLens !== "explain";
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  aria-pressed={on}
-                  onClick={() => {
-                    if (key === "explain" && !hasZh) {
-                      askCoach("生成本篇讲解，中英对照并提炼短语和生词");
-                      return;
-                    }
-                    setViewLens(key);
-                    setTranslateOpen(false);
-                  }}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors",
-                    on ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-muted",
-                  )}
-                >
-                  <Icon className="size-4" aria-hidden />
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-          <Button variant="secondary" onClick={() => askCoach("生成本篇讲解，中英对照并提炼短语和生词")}>
+          <Button
+            variant="secondary"
+            disabled={explainingAll || glossingIndex !== null}
+            onClick={() => void explainArticleAll()}
+          >
             <ScrollText aria-hidden />
-            生成本篇讲解
+            {explainingAll ? "讲解生成中…" : "生成本篇讲解"}
           </Button>
         </div>
       </header>
 
-      <div className="prose" data-deliver="article">
+      {explainingAll ? (
+        <p className="mb-4 flex items-center gap-2 text-sm font-medium text-muted-foreground" role="status">
+          {statusMessage || "正在生成本篇讲解"}
+          <span className="typing-dots" aria-hidden>
+            <span />
+            <span />
+            <span />
+          </span>
+        </p>
+      ) : null}
+
+      <div className="prose" data-deliver="article" aria-busy={explainingAll}>
         {article.paragraphs.map((p) => {
           const active = selected === p.index;
           return (
@@ -363,10 +474,27 @@ export function ReaderView() {
                 {String(p.index + 1).padStart(2, "0")}
               </span>
               <button type="button" className="para-btn" onClick={() => setSelected(p.index)}>
-                <p>
-                  <GlossableText text={p.text} marks={marks} />
-                </p>
-                {viewLens === "explain" && p.zh ? <p className="zh">{p.zh}</p> : null}
+                {(() => {
+                  // English always comes from paragraph.text (stable keys).
+                  // After explain, only .zh nodes mount underneath — English is not rebuilt.
+                  const lines = linesFromParagraph(p.text, p.zh);
+                  const hasZh = lines.some((line) => line.zh);
+                  return (
+                    <div
+                      className="sentence-pairs"
+                      {...(hasZh ? { "data-deliver": explainDeliverKey(p.index) } : {})}
+                    >
+                      {lines.map((line, i) => (
+                        <div key={`${p.index}-s${i}`} className="sentence-pair">
+                          <p className="en">
+                            <GlossableText text={line.en} marks={marks} />
+                          </p>
+                          {line.zh ? <p className="zh">{line.zh}</p> : null}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
               </button>
 
               {active ? (
@@ -382,7 +510,7 @@ export function ReaderView() {
                   </Button>
                   <Button
                     variant="secondary"
-                    disabled={glossingIndex === p.index}
+                    disabled={glossingIndex === p.index || explainingAll}
                     onClick={() => void explainWithModel(p.index)}
                   >
                     <Languages aria-hidden />
@@ -402,9 +530,8 @@ export function ReaderView() {
                 </div>
               ) : null}
 
-              {viewLens === "explain" &&
-              extractions.some((item) => item.paragraphIndex === p.index) ? (
-                <ul className="para-gloss" data-deliver="explain">
+              {extractions.some((item) => item.paragraphIndex === p.index) ? (
+                <ul className="para-gloss">
                   {extractions
                     .filter((item) => item.paragraphIndex === p.index)
                     .map((item) => (

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { getChatModel } from "@/lib/agent/model";
+import { getChatModel, type UsageSource } from "@/lib/agent/model";
 import {
   getArticle,
   listExtractions,
@@ -8,6 +8,7 @@ import {
 } from "@/lib/db";
 import type { Article, Extraction } from "@/lib/types";
 import { parseExplainPayload } from "./parse";
+import { splitEnglishSentences } from "./sentences";
 
 function textOf(content: unknown): string {
   if (typeof content === "string") return content;
@@ -28,34 +29,36 @@ function textOf(content: unknown): string {
     .join("");
 }
 
-/** Write a model translation for one paragraph without touching the others. */
+/** Write sentence-aligned Chinese under one English paragraph. */
 export async function explainParagraph(
   articleId: string,
   paragraphIndex: number,
-): Promise<{ article: Article; extractions: Extraction[] }> {
+  options?: { source?: UsageSource },
+): Promise<{ article: Article; extractions: Extraction[]; deliverZh: string }> {
   const article = getArticle(articleId);
   if (!article) throw new Error("找不到这篇文章");
   const paragraph = article.paragraphs.find((item) => item.index === paragraphIndex);
   if (!paragraph) throw new Error("找不到这一段");
 
-  const model = getChatModel(false, "paragraph-explain");
+  const sentences = splitEnglishSentences(paragraph.text);
+  const model = getChatModel(false, options?.source ?? "paragraph-explain");
   const raw = await model.invoke([
     {
       role: "system",
       content:
-        'You write a fluent Chinese rendering of one English paragraph for a learner who can already see the English. Reply ONLY JSON: {"zh":string,"phrases":[{"text":string,"gloss":string,"sentence":string}],"words":[{"text":string,"gloss":string,"sentence":string}]}. zh must read like normal written Chinese, in complete sentences, never a word-for-word gloss. At most 4 phrases and 4 words. Skip function words. gloss is a short Chinese meaning.',
+        'You write sentence-aligned Chinese for an English learner. Reply ONLY JSON: {"sentences":[{"en":string,"zh":string}],"phrases":[{"text":string,"gloss":string,"sentence":string}],"words":[{"text":string,"gloss":string,"sentence":string}]}. sentences MUST have the same length and order as the input list; copy each input English sentence into en exactly; zh is fluent written Chinese for that sentence only, never a word-for-word gloss. At most 4 phrases and 4 words for the whole paragraph. Skip function words. gloss is a short Chinese meaning.',
     },
     {
       role: "user",
       content: JSON.stringify({
         title: article.title,
         index: paragraph.index,
-        text: paragraph.text,
+        sentences: sentences.map((text, i) => ({ i, text })),
       }),
     },
   ]);
 
-  const payload = parseExplainPayload(textOf(raw.content));
+  const payload = parseExplainPayload(textOf(raw.content), paragraph.text);
   updateParagraphZh(articleId, paragraphIndex, payload.zh);
 
   const extractions: Extraction[] = [
@@ -84,5 +87,9 @@ export async function explainParagraph(
 
   const refreshed = getArticle(articleId);
   if (!refreshed) throw new Error("找不到这篇文章");
-  return { article: refreshed, extractions: listExtractions(articleId) };
+  return {
+    article: refreshed,
+    extractions: listExtractions(articleId),
+    deliverZh: payload.pairs.map((pair) => pair.zh).join(""),
+  };
 }

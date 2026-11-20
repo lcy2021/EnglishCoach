@@ -128,23 +128,40 @@ def title_of(page, paragraphs: list[str]) -> str:
     return paragraphs[0][:80] if paragraphs else "Untitled"
 
 
+def friendly_error(url: str, error: BaseException) -> str:
+    text = str(error)
+    lowered = text.lower()
+    if "could not connect" in lowered or "failed to connect" in lowered or "timed out" in lowered or "timeout" in lowered:
+        return f"无法连接到 {url}（网络不通或站点不可达）"
+    if "ssl" in lowered or "certificate" in lowered:
+        return f"证书校验失败，无法拉取 {url}"
+    return f"抓取失败：{text}"
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         print("usage: scrapling_fetch.py <url>", file=sys.stderr)
         sys.exit(2)
     url = sys.argv[1]
     try:
-        page = Fetcher.get(url, impersonate="chrome", stealthy_headers=True, timeout=40)
+        # One retry is enough: unreachable hosts used to burn ~60s on three attempts.
+        page = Fetcher.get(
+            url,
+            impersonate="chrome",
+            stealthy_headers=True,
+            timeout=20,
+            retries=1,
+        )
     except Exception as error:
-        print(f"Fetch failed for {url}: {error}", file=sys.stderr)
+        print(friendly_error(url, error), file=sys.stderr)
         sys.exit(1)
     status = int(getattr(page, "status", 200) or 200)
     if status >= 400:
-        print(f"Fetch failed ({status}) for {url}", file=sys.stderr)
+        print(f"网站返回 {status}，无法拉取该页", file=sys.stderr)
         sys.exit(1)
     paragraphs = choose_paragraphs(page)
     if not paragraphs:
-        print("Extracted article had no paragraphs.", file=sys.stderr)
+        print("页面里没有找到可用正文", file=sys.stderr)
         sys.exit(1)
     sys.stdout.reconfigure(encoding="utf-8")
     json.dump(

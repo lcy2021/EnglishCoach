@@ -414,6 +414,30 @@ body {
   margin: 0;
 }
 
+.sentence-pairs {
+  display: grid;
+  gap: 14px;
+}
+
+.sentence-pair {
+  display: grid;
+  gap: 6px;
+}
+
+.sentence-pair .en {
+  margin: 0;
+}
+
+.sentence-pair .zh {
+  margin: 0 !important;
+  padding: 0;
+  border: 0;
+  color: var(--muted-foreground);
+  font-family: var(--font-ui), "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
 .zh {
   margin: 12px 0 0 !important;
   padding-top: 10px;
