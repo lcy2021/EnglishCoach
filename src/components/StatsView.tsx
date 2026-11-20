@@ -15,6 +15,7 @@ import {
   StackedColumns,
 } from "@/components/charts";
 import { cn } from "@/lib/utils";
+import { useToday } from "@/lib/store/today";
 import { useWorkspace } from "@/lib/store/workspace";
 import { BookLoader } from "@/components/ui/loader";
 
@@ -87,24 +88,7 @@ function Delta({ now, before, unit = "" }: { now: number | null; before: number 
 }
 
 /** This week against the last, from the trailing 14 days regardless of the chart range. */
-function WeeklyReport() {
-  const [days, setDays] = useState<DayPoint[] | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/stats?days=14", { cache: "no-store" });
-        if (!res.ok) return;
-        const data = (await res.json()) as StatsPayload;
-        if (!cancelled) setDays(data.days);
-      } catch {
-        /* the card is optional */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+function WeeklyReport({ days }: { days: DayPoint[] | null }) {
   if (!days) return null;
   const { thisWeek, lastWeek } = weekCompare(days);
   const rows: Array<{ label: string; value: string; note: React.ReactNode }> = [
@@ -150,31 +134,62 @@ export function StatsView() {
   const setGoal = useGoal((s) => s.setGoal);
   const [range, setRange] = useState<number>(14);
   const [stats, setStats] = useState<StatsPayload | null>(null);
+  const [reportDays, setReportDays] = useState<DayPoint[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    (async () => {
-      try {
-        const res = await fetch(`/api/stats?days=${range}`, { cache: "no-store" });
-        if (!res.ok) throw new Error("统计加载失败");
-        const data = (await res.json()) as StatsPayload;
-        if (!cancelled) {
+    // Defer so React strict mode does not send the request twice in dev.
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const res = await fetch(`/api/stats?days=${range}`, { cache: "no-store" });
+          if (!res.ok) throw new Error("统计加载失败");
+          const data = (await res.json()) as StatsPayload;
+          if (cancelled) return;
           setStats(data);
           setError("");
+          useToday.getState().setToday({
+            drills: data.today.drills,
+            tokens: data.today.input + data.today.output,
+          });
+          if (range === 14) setReportDays(data.days);
+        } catch (caught) {
+          if (!cancelled) setError(caught instanceof Error ? caught.message : "统计加载失败");
+        } finally {
+          if (!cancelled) setLoading(false);
         }
-      } catch (caught) {
-        if (!cancelled) setError(caught instanceof Error ? caught.message : "统计加载失败");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
+      })();
+    }, 0);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, [range]);
+
+  // The weekly card needs 14 days. The default chart range is already 14, so reuse that response.
+  useEffect(() => {
+    if (range === 14 || reportDays) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const res = await fetch("/api/stats?days=14", { cache: "no-store" });
+          if (!res.ok || cancelled) return;
+          const data = (await res.json()) as StatsPayload;
+          if (!cancelled) setReportDays(data.days);
+        } catch {
+          /* the card is optional */
+        }
+      })();
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [range, reportDays]);
 
   const pageCommand = useWorkspace((s) => s.pageCommand);
   useEffect(() => {
@@ -293,7 +308,7 @@ export function StatsView() {
             )}
           </div>
 
-          <WeeklyReport />
+          <WeeklyReport days={reportDays} />
 
           <ChartCard
             title="每日练习"

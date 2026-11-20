@@ -46,7 +46,7 @@ npm install
 npm run dev
 ```
 
-打开 [http://localhost:3010](http://localhost:3010)。每个页面有自己的地址（如 `/stats`、`/drill`、`/vocab`），刷新后仍停在当前页。文章阅读在 `/`。
+打开 [http://localhost:3010](http://localhost:3010)。每个页面有自己的地址（如 `/stats`、`/drill`、`/vocab`），刷新后仍停在当前页。文章阅读在 `/`。进入某个页面只请求该页自己的数据；侧栏的今日目标和生词数量随首次打开一起带上，换页时不再另发请求。
 
 首次启动会自动执行 `scripts/ensure-setup.mjs`：
 

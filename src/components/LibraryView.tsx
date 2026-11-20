@@ -53,20 +53,23 @@ export function LibraryView() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    void (async () => {
-      try {
-        const res = await fetch(`/api/articles?page=${page}&pageSize=${PAGE_SIZE}`, { cache: "no-store" });
-        const data = (await res.json()) as { articles: ArticleListItem[]; total: number; page: number };
-        if (cancelled) return;
-        setArticles(data.articles ?? []);
-        setTotal(data.total ?? 0);
-        if (data.page && data.page !== page) setPage(data.page);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const res = await fetch(`/api/articles?page=${page}&pageSize=${PAGE_SIZE}`, { cache: "no-store" });
+          const data = (await res.json()) as { articles: ArticleListItem[]; total: number; page: number };
+          if (cancelled) return;
+          setArticles(data.articles ?? []);
+          setTotal(data.total ?? 0);
+          if (data.page && data.page !== page) setPage(data.page);
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
+      })();
+    }, 0);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, [page, reloadKey]);
 
