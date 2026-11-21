@@ -96,7 +96,7 @@ function CoachThread() {
           }}
         />
         {busy ? (
-          <p className="pop-in flex items-center gap-2 text-sm text-muted-foreground">
+          <p className="pop-in flex items-center gap-2 whitespace-nowrap text-sm text-muted-foreground">
             <span className="typing-dots" aria-hidden>
               <span />
               <span />
