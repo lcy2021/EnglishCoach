@@ -86,7 +86,7 @@ export function LibraryView() {
       applyPatch({ statusMessage: data.error || "打开失败" });
       return;
     }
-    loadArticle(data.article);
+    loadArticle(data.article, data.extractions ?? []);
     setRoute("practice");
   }
 

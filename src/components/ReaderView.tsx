@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -28,6 +28,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { BookLoader } from "@/components/ui/loader";
 import { explainDeliverKey } from "@/lib/explain/deliver";
 import { joinZhLines, linesFromParagraph } from "@/lib/explain/sentences";
+import type { Paragraph } from "@/lib/types";
+
+/** True when this paragraph already has persisted bilingual notes. */
+function paragraphHasExplain(paragraph: Paragraph): boolean {
+  return linesFromParagraph(paragraph.text, paragraph.zh).some((line) => Boolean(line.zh));
+}
 
 export function ReaderView() {
   const article = useWorkspace((s) => s.article);
@@ -49,6 +55,9 @@ export function ReaderView() {
   const [glossingIndex, setGlossingIndex] = useState<number | null>(null);
   const [explainingAll, setExplainingAll] = useState(false);
   const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
+  /** Paragraph indices whose Chinese notes are currently visible. Hidden on open by default. */
+  const [revealedExplain, setRevealedExplain] = useState<Set<number>>(() => new Set());
+  const knownExplainRef = useRef<Set<number>>(new Set());
   const setRoute = useWorkspace((s) => s.setRoute);
   const level = useLevel((s) => s.level);
   const highlight = useLevel((s) => s.highlight);
@@ -58,6 +67,37 @@ export function ReaderView() {
     busy &&
     typeof statusMessage === "string" &&
     /抓取|整理文章|梳理正文|换个方式/.test(statusMessage);
+
+  // Opening an article: keep stored notes but do not show them until the user clicks.
+  useEffect(() => {
+    const paragraphs = useWorkspace.getState().article?.paragraphs ?? [];
+    const existing = new Set<number>();
+    for (const paragraph of paragraphs) {
+      if (paragraphHasExplain(paragraph)) existing.add(paragraph.index);
+    }
+    knownExplainRef.current = existing;
+    setRevealedExplain(new Set());
+  }, [articleId]);
+
+  // Auto-reveal only paragraphs that gained notes during this generate/coach session.
+  useEffect(() => {
+    if (!article) return;
+    const fresh: number[] = [];
+    for (const paragraph of article.paragraphs) {
+      if (!paragraphHasExplain(paragraph) || knownExplainRef.current.has(paragraph.index)) {
+        continue;
+      }
+      knownExplainRef.current.add(paragraph.index);
+      fresh.push(paragraph.index);
+    }
+    if (fresh.length === 0) return;
+    if (!(busy || explainingAll || glossingIndex !== null)) return;
+    setRevealedExplain((prev) => {
+      const next = new Set(prev);
+      for (const index of fresh) next.add(index);
+      return next;
+    });
+  }, [article, busy, explainingAll, glossingIndex]);
 
   // Rate the article against the learner's level (dictionary lookups, no model call).
   useEffect(() => {
@@ -474,6 +514,11 @@ export function ReaderView() {
       <div className="prose" data-deliver="article" aria-busy={explainingAll}>
         {article.paragraphs.map((p) => {
           const active = selected === p.index;
+          const hasExplain = paragraphHasExplain(p);
+          const showExplain = revealedExplain.has(p.index);
+          const paraExtractions = showExplain
+            ? extractions.filter((item) => item.paragraphIndex === p.index)
+            : [];
           return (
             <article key={p.index} className={active ? "para active" : "para"}>
               <span className="para-no" aria-hidden>
@@ -482,20 +527,19 @@ export function ReaderView() {
               <button type="button" className="para-btn" onClick={() => setSelected(p.index)}>
                 {(() => {
                   // English always comes from paragraph.text (stable keys).
-                  // After explain, only .zh nodes mount underneath — English is not rebuilt.
+                  // Chinese notes stay mounted only while this paragraph is revealed.
                   const lines = linesFromParagraph(p.text, p.zh);
-                  const hasZh = lines.some((line) => line.zh);
                   return (
                     <div
                       className="sentence-pairs"
-                      {...(hasZh ? { "data-deliver": explainDeliverKey(p.index) } : {})}
+                      {...(showExplain ? { "data-deliver": explainDeliverKey(p.index) } : {})}
                     >
                       {lines.map((line, i) => (
                         <div key={`${p.index}-s${i}`} className="sentence-pair">
                           <p className="en">
                             <GlossableText text={line.en} marks={marks} />
                           </p>
-                          {line.zh ? <p className="zh">{line.zh}</p> : null}
+                          {showExplain && line.zh ? <p className="zh">{line.zh}</p> : null}
                         </div>
                       ))}
                     </div>
@@ -514,14 +558,31 @@ export function ReaderView() {
                     <PenLine aria-hidden />
                     自己译
                   </Button>
-                  <Button
-                    variant="secondary"
-                    disabled={glossingIndex === p.index || explainingAll}
-                    onClick={() => void explainWithModel(p.index)}
-                  >
-                    <Languages aria-hidden />
-                    {glossingIndex === p.index ? "讲解中…" : "看讲解"}
-                  </Button>
+                  {hasExplain ? (
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        setRevealedExplain((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(p.index)) next.delete(p.index);
+                          else next.add(p.index);
+                          return next;
+                        });
+                      }}
+                    >
+                      <Languages aria-hidden />
+                      {showExplain ? "收起讲解" : "看讲解"}
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="secondary"
+                      disabled={glossingIndex === p.index || explainingAll}
+                      onClick={() => void explainWithModel(p.index)}
+                    >
+                      <Languages aria-hidden />
+                      {glossingIndex === p.index ? "讲解中…" : "生成讲解"}
+                    </Button>
+                  )}
                   <Button variant="ghost" onClick={() => speak(p.text, p.index)}>
                     {speakingIndex === p.index ? <Square aria-hidden /> : <Volume2 aria-hidden />}
                     {speakingIndex === p.index ? "停止" : "朗读"}
@@ -536,11 +597,9 @@ export function ReaderView() {
                 </div>
               ) : null}
 
-              {extractions.some((item) => item.paragraphIndex === p.index) ? (
+              {paraExtractions.length > 0 ? (
                 <ul className="para-gloss">
-                  {extractions
-                    .filter((item) => item.paragraphIndex === p.index)
-                    .map((item) => (
+                  {paraExtractions.map((item) => (
                       <li key={item.id} className="gloss-frame">
                         <Badge variant={item.kind === "phrase" ? "secondary" : "default"}>
                           {item.kind === "phrase" ? "短语" : "生词"}
@@ -609,35 +668,41 @@ export function ReaderView() {
         </div>
       ) : null}
 
-      {extractions.length > 0 ? (
-        <aside className="mt-8 rounded-2xl border bg-card p-5">
-          <h2 className="mb-3 flex items-center gap-2 text-base font-bold">
-            短语和生词
-            <Badge variant="secondary">{extractions.length}</Badge>
-          </h2>
-          <ul className="divide-y">
-            {extractions.map((item) => (
-              <li key={item.id} className="gloss-frame flex items-start gap-3 py-2.5">
-                <Badge variant={item.kind === "phrase" ? "secondary" : "default"} className="mt-0.5">
-                  {item.kind === "phrase" ? "短语" : "生词"}
-                </Badge>
-                <div className="min-w-0 text-sm">
-                  <b className="font-display text-base font-semibold">
-                    <GlossableText text={item.text} />
-                  </b>
-                  <span className="ml-2 text-muted-foreground">{item.gloss}</span>
-                  {item.sentence ? (
-                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                      <GlossableText text={item.sentence} />
-                    </p>
-                  ) : null}
-                </div>
-                <SaveWordButton text={item.text} gloss={item.gloss} sentence={item.sentence} source="explain" className="ml-auto" />
-              </li>
-            ))}
-          </ul>
-        </aside>
-      ) : null}
+      {(() => {
+        const visibleExtractions = extractions.filter((item) =>
+          revealedExplain.has(item.paragraphIndex),
+        );
+        if (visibleExtractions.length === 0) return null;
+        return (
+          <aside className="mt-8 rounded-2xl border bg-card p-5">
+            <h2 className="mb-3 flex items-center gap-2 text-base font-bold">
+              短语和生词
+              <Badge variant="secondary">{visibleExtractions.length}</Badge>
+            </h2>
+            <ul className="divide-y">
+              {visibleExtractions.map((item) => (
+                <li key={item.id} className="gloss-frame flex items-start gap-3 py-2.5">
+                  <Badge variant={item.kind === "phrase" ? "secondary" : "default"} className="mt-0.5">
+                    {item.kind === "phrase" ? "短语" : "生词"}
+                  </Badge>
+                  <div className="min-w-0 text-sm">
+                    <b className="font-display text-base font-semibold">
+                      <GlossableText text={item.text} />
+                    </b>
+                    <span className="ml-2 text-muted-foreground">{item.gloss}</span>
+                    {item.sentence ? (
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        <GlossableText text={item.sentence} />
+                      </p>
+                    ) : null}
+                  </div>
+                  <SaveWordButton text={item.text} gloss={item.gloss} sentence={item.sentence} source="explain" className="ml-auto" />
+                </li>
+              ))}
+            </ul>
+          </aside>
+        );
+      })()}
     </section>
   );
 }

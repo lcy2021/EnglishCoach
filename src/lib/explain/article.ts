@@ -51,6 +51,28 @@ function textOf(content: unknown): string {
 }
 
 /**
+ * Resolve explain bounds. If the caller passed only one end, use it for both —
+ * never treat a missing `to` as "through the last paragraph" (that expands a
+ * single-paragraph coach request into almost the whole article).
+ */
+export function resolveExplainRange(
+  paragraphCount: number,
+  range?: { from?: number; to?: number },
+): { from: number; to: number } {
+  if (paragraphCount <= 0) return { from: 0, to: -1 };
+  const last = paragraphCount - 1;
+  if (!range || (range.from === undefined && range.to === undefined)) {
+    return { from: 0, to: last };
+  }
+  const from = range.from ?? range.to!;
+  const to = range.to ?? range.from!;
+  return {
+    from: Math.max(0, Math.min(from, to)),
+    to: Math.min(last, Math.max(from, to)),
+  };
+}
+
+/**
  * One streaming model call. Model emits NDJSON (one paragraph object per line)
  * with sentence-aligned Chinese; each finished line is saved and yielded.
  */
@@ -61,8 +83,7 @@ export async function* streamExplainArticle(
   const article = getArticle(articleId);
   if (!article) throw new Error("找不到这篇文章");
 
-  const from = range?.from ?? 0;
-  const to = range?.to ?? article.paragraphs.length - 1;
+  const { from, to } = resolveExplainRange(article.paragraphs.length, range);
   const slice = article.paragraphs.filter((p) => p.index >= from && p.index <= to);
   if (slice.length === 0) throw new Error("找不到要讲解的段落");
 

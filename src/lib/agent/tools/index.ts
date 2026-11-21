@@ -25,8 +25,10 @@ import { buildPageTools } from "@/lib/agent/tools/pages";
 import { pushPatch, reportProgress } from "@/lib/agent/context";
 import { getChatModel } from "@/lib/agent/model";
 import { searchWeb } from "@/lib/agent/web-search";
-import { streamExplainArticle } from "@/lib/explain/article";
+import { resolveExplainRange, streamExplainArticle } from "@/lib/explain/article";
 import { explainDeliverKey } from "@/lib/explain/deliver";
+import { explainParagraph } from "@/lib/explain/paragraph";
+import { joinZhLines, linesFromParagraph } from "@/lib/explain/sentences";
 import type { ViewLens } from "@/lib/types";
 
 function requireArticleId(ctx: AgentSessionContext): string {
@@ -284,12 +286,50 @@ export function buildCoachTools(ctx: AgentSessionContext) {
   const generate_explain = tool(
     async ({ paragraphFrom, paragraphTo }) => {
       const articleId = requireArticleId(ctx);
+      const article = getArticle(articleId);
+      if (!article) throw new Error("找不到这篇文章");
+
       const hasRange =
         typeof paragraphFrom === "number" || typeof paragraphTo === "number";
-      const range = hasRange
-        ? { from: paragraphFrom, to: paragraphTo }
-        : undefined;
+      const bounds = resolveExplainRange(
+        article.paragraphs.length,
+        hasRange ? { from: paragraphFrom, to: paragraphTo } : undefined,
+      );
 
+      // Single paragraph: dedicated path (same as the reader "看讲解" button).
+      if (hasRange && bounds.from === bounds.to) {
+        reportProgress(ctx, `正在讲解第 ${bounds.from + 1} 段`);
+        const result = await explainParagraph(articleId, bounds.from);
+        const paragraph = result.article.paragraphs.find((p) => p.index === bounds.from);
+        const zh =
+          result.deliverZh ||
+          (paragraph
+            ? joinZhLines(linesFromParagraph(paragraph.text, paragraph.zh))
+            : "");
+        pushPatch(ctx, {
+          article: result.article,
+          selectedParagraphIndex: bounds.from,
+          viewLens: "explain",
+          translateOpen: false,
+          explainExtractions: result.extractions,
+          deliver: zh ? { target: explainDeliverKey(bounds.from), text: zh } : undefined,
+          statusMessage: `已完成第 ${bounds.from + 1} 段讲解`,
+        });
+        return JSON.stringify({
+          ok: true,
+          explainedFrom: bounds.from,
+          explainedTo: bounds.to,
+          explainedCount: 1,
+          phraseCount: result.extractions.filter(
+            (item) => item.kind === "phrase" && item.paragraphIndex === bounds.from,
+          ).length,
+          wordCount: result.extractions.filter(
+            (item) => item.kind === "word" && item.paragraphIndex === bounds.from,
+          ).length,
+        });
+      }
+
+      const range = hasRange ? bounds : undefined;
       let done: {
         article: NonNullable<ReturnType<typeof getArticle>>;
         extractions: ReturnType<typeof listExtractions>;
@@ -325,9 +365,12 @@ export function buildCoachTools(ctx: AgentSessionContext) {
       }
 
       if (!done) throw new Error("讲解失败");
+      const explainedCount = bounds.to - bounds.from + 1;
       return JSON.stringify({
         ok: true,
-        paragraphCount: done.article.paragraphs.filter((p) => p.zh).length,
+        explainedFrom: bounds.from,
+        explainedTo: bounds.to,
+        explainedCount,
         phraseCount: done.extractions.filter((item) => item.kind === "phrase").length,
         wordCount: done.extractions.filter((item) => item.kind === "word").length,
       });
@@ -335,7 +378,7 @@ export function buildCoachTools(ctx: AgentSessionContext) {
     {
       name: "generate_explain",
       description:
-        "Generate Chinese notes + phrase/word extraction for the WHOLE open article. Omit paragraphFrom/paragraphTo unless the user explicitly asks for only a paragraph range. For 本篇 / 全文讲解, call with no range args.",
+        "Generate Chinese notes + phrase/word extraction on the page. Whole article (本篇/全文) → omit both args. One paragraph (第N段/这一段) → pass paragraphFrom AND paragraphTo as the same 0-based index (第2段 → both 1). A range → inclusive 0-based bounds. Passing only one bound is treated as that single paragraph, never as through the end of the article.",
       schema: z.object({
         paragraphFrom: z.number().int().nonnegative().optional(),
         paragraphTo: z.number().int().nonnegative().optional(),
@@ -414,7 +457,8 @@ export function buildCoachTools(ctx: AgentSessionContext) {
     },
     {
       name: "list_wrong_book",
-      description: "List wrong-book items (default unresolved only).",
+      description:
+        "Open the 复习 page (错题本) and list items. Prefer this over navigate(wrong-book) for 打开复习 / 看错题. Not for 复习生词 — use list_vocab with startReview. Default unresolved only.",
       schema: z.object({
         unresolvedOnly: z.boolean().optional(),
       }),

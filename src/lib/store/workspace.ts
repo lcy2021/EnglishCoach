@@ -38,7 +38,7 @@ interface WorkspaceState {
   addMessage: (message: ChatMessage) => void;
   appendToMessage: (id: string, text: string) => void;
   clearMessages: () => void;
-  loadArticle: (article: Article) => void;
+  loadArticle: (article: Article, extractions?: Extraction[]) => void;
 }
 
 export const useWorkspace = create<WorkspaceState>((set) => ({
@@ -101,14 +101,14 @@ export const useWorkspace = create<WorkspaceState>((set) => ({
       ),
     })),
   clearMessages: () => set({ messages: [] }),
-  loadArticle: (article) =>
+  loadArticle: (article, extractions = []) =>
     set({
       article,
       route: "practice",
       selectedParagraphIndex: 0,
       viewLens: "read",
       translateOpen: false,
-      explainExtractions: [],
+      explainExtractions: extractions,
       translationFeedback: null,
     }),
 }));

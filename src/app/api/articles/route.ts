@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { deleteArticle, getArticle, listArticlesPage } from "@/lib/db";
+import { deleteArticle, getArticle, listArticlesPage, listExtractions } from "@/lib/db";
 import { readPage } from "@/lib/db/page";
 
 export const runtime = "nodejs";
@@ -12,7 +12,7 @@ export async function GET(request: Request) {
     if (!article) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    return NextResponse.json({ article });
+    return NextResponse.json({ article, extractions: listExtractions(id) });
   }
   const pageSize = readPage(searchParams.get("pageSize"), 7);
   const result = listArticlesPage(readPage(searchParams.get("page"), 1), pageSize);
