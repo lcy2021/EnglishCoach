@@ -34,11 +34,12 @@ export type CoachStreamEvent =
 
 /** What to show the moment a tool starts; tools can refine it through ctx.progress. */
 function startStatus(name: string, args: unknown): string {
-  const a = (args ?? {}) as { query?: string; paragraphIndex?: number };
+  const a = (args ?? {}) as { query?: string; paragraphIndex?: number; startReview?: boolean };
   if (name === "web_search" && a.query) return `正在搜索「${a.query.slice(0, 24)}」`;
   if (name === "check_translation" && typeof a.paragraphIndex === "number") {
     return `正在批改第 ${a.paragraphIndex + 1} 段的翻译`;
   }
+  if (name === "list_vocab" && a.startReview) return "正在开始复习生词";
   return TOOL_STATUS[name] ?? "正在处理";
 }
 

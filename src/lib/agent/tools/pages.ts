@@ -87,7 +87,7 @@ export function buildPageTools(ctx: AgentSessionContext) {
     {
       name: "navigate",
       description:
-        "Open any app page: practice (文章阅读), drill (AI出题), vocab (生词本), wrong-book (复习), library (资产·文章), drill-bank (资产·题目), stats (学习总览), settings (设置).",
+        "Open a bare page only when no specialized tool fits. Routes: practice (文章阅读), drill (AI出题), vocab (生词本), wrong-book (复习/错题), library (资产·文章), drill-bank (资产·题目), stats (学习总览), settings (设置). Prefer list_vocab (incl. startReview for 复习生词), list_wrong_book, list_library, list_drills, get_stats, create_drill, or update_settings instead.",
       schema: z.object({ route: z.enum(ROUTES) }),
     },
   );
@@ -105,7 +105,8 @@ export function buildPageTools(ctx: AgentSessionContext) {
     },
     {
       name: "list_library",
-      description: "Open 资产·文章 and list saved articles. Optional title filter.",
+      description:
+        "Open 资产·文章 and list saved articles. Prefer this over navigate(library). Optional title filter.",
       schema: z.object({ query: z.string().optional() }),
     },
   );
@@ -180,7 +181,7 @@ export function buildPageTools(ctx: AgentSessionContext) {
     {
       name: "create_drill",
       description:
-        "Create one Chinese-to-English fill-in drill and open it. Tags can be 生活用语, 职场, 四级, or a new label. Difficulty is 入门, 进阶, or 较难.",
+        "Create one Chinese-to-English fill-in drill and open it. Use for 出一道题 / 开始练习 — not navigate(drill). Tags can be 生活用语, 职场, 四级, or a new label. Difficulty is 入门, 进阶, or 较难.",
       schema: z.object({
         tags: z.array(z.string()).optional(),
         topic: z.string().optional().describe("Extra direction, such as 面试自我介绍"),
@@ -204,7 +205,8 @@ export function buildPageTools(ctx: AgentSessionContext) {
     },
     {
       name: "list_drills",
-      description: "Open 资产·题目 and list saved drills plus available tags.",
+      description:
+        "Open 资产·题目 and list saved drills plus available tags. Prefer this over navigate(drill-bank).",
       schema: z.object({}),
     },
   );
@@ -257,31 +259,48 @@ export function buildPageTools(ctx: AgentSessionContext) {
 
   const list_vocab = tool(
     async ({ query, dueOnly, startReview }) => {
-      const words = (dueOnly ? dueVocab(20) : listVocab(query ?? "", 20)).map(compactWord);
+      const reviewing = Boolean(startReview);
+      const dueList = dueOnly || reviewing;
+      const words = (dueList ? dueVocab(20) : listVocab(query ?? "", 20)).map(compactWord);
       const summary = vocabSummary();
-      showPage(ctx, "vocab", {
-        refresh: ["vocab"],
-        vocab: {
-          tab: dueOnly || startReview ? "review" : query ? "all" : "review",
-          query: query ?? "",
-          startReview: Boolean(startReview),
+      showPage(
+        ctx,
+        "vocab",
+        {
+          refresh: ["vocab"],
+          vocab: {
+            tab: dueList || !query ? "review" : "all",
+            query: reviewing ? "" : (query ?? ""),
+            startReview: reviewing,
+          },
         },
-      });
+        {
+          statusMessage: reviewing
+            ? summary.due > 0
+              ? "已开始复习生词"
+              : "生词本已打开，暂无到期词"
+            : undefined,
+        },
+      );
       return JSON.stringify({
         total: summary.total,
         due: summary.due,
         mastered: summary.mastered,
+        startedReview: reviewing,
         words,
       });
     },
     {
       name: "list_vocab",
       description:
-        "Open the word book. dueOnly lists words due now. startReview begins the review session on the page.",
+        "Open the word book on the page. For 开始复习生词 / 复习生词 / 背单词, pass startReview true so the card session starts (not navigate). dueOnly lists words due now. Without startReview, only the book opens.",
       schema: z.object({
         query: z.string().optional(),
-        dueOnly: z.boolean().optional(),
-        startReview: z.boolean().optional(),
+        dueOnly: z.boolean().optional().describe("List due words without starting the card session."),
+        startReview: z
+          .boolean()
+          .optional()
+          .describe("True starts the on-page review session with due words. Required for 开始复习生词."),
       }),
     },
   );
@@ -331,7 +350,7 @@ export function buildPageTools(ctx: AgentSessionContext) {
     {
       name: "review_vocab",
       description:
-        "Record one word-book review. rating: again (忘了), hard (模糊), good (记得). Use only the rating the user gave.",
+        "Record one rating after the user already judged a word: again (忘了), hard (模糊), good (记得). Does not start a review session — use list_vocab with startReview for that.",
       schema: z.object({
         id: z.string().optional(),
         text: z.string().optional(),
@@ -383,7 +402,7 @@ export function buildPageTools(ctx: AgentSessionContext) {
     {
       name: "get_stats",
       description:
-        "Open the stats page on one range and return the token total shown there. Pass days 0 for the all-time total (the page selects the all-time range). Pass 7, 14, or 30 for that many days; omit days for 14. tokens is input plus output for that range and matches the page. For days 0, tokens equals allTime.tokens. Quote tokens. Never quote today's tokens for an all-time question, and never say the total is unknown.",
+        "Open 学习总览 and return the token total shown there. Prefer this over navigate(stats) for 打开学习总览 / 看统计 / token 用量. Pass days 0 for the all-time total (the page selects the all-time range). Pass 7, 14, or 30 for that many days; omit days for 14. tokens is input plus output for that range and matches the page. For days 0, tokens equals allTime.tokens. Quote tokens. Never quote today's tokens for an all-time question, and never say the total is unknown.",
       schema: z.object({
         days: z
           .union([z.literal(0), z.literal(7), z.literal(14), z.literal(30)])
@@ -424,7 +443,7 @@ export function buildPageTools(ctx: AgentSessionContext) {
     {
       name: "update_settings",
       description:
-        "Change settings and open the settings page. goal is 1, 3, 5, or 10. level is 初中, 高中, 四级, 六级, 考研, or 雅思/托福. accent is en-US or en-GB. rate is 0.6 to 1.2. autoPlay reads a vocab card aloud. highlight marks words above the learner's level.",
+        "Change settings and open the settings page. Prefer this over navigate(settings) when the user asked to change a value. goal is 1, 3, 5, or 10. level is 初中, 高中, 四级, 六级, 考研, or 雅思/托福. accent is en-US or en-GB. rate is 0.6 to 1.2. autoPlay reads a vocab card aloud. highlight marks words above the learner's level.",
       schema: z.object({
         goal: z.number().int().optional(),
         level: z.union([z.number().int(), z.string()]).optional(),
