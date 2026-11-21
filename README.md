@@ -46,6 +46,8 @@ npm install
 npm run dev
 ```
 
+`npm install` 会读取项目里的 `.npmrc`（`ignore-scripts=true`）。`better-sqlite3` 13 已带上各平台预编译包，安装时直接使用这份二进制。Node.js 22 自带的 npm 10 在看到 `binding.gyp` 时仍会调用 node-gyp；在没有可用 C++ 工具链，或只有 Visual Studio 2026 的机器上，这次编译会失败。
+
 打开 [http://localhost:3010](http://localhost:3010)。每个页面有自己的地址（如 `/stats`、`/drill`、`/vocab`），刷新后仍停在当前页。文章阅读在 `/`。进入某个页面只请求该页自己的数据；侧栏的今日目标和生词数量随首次打开一起带上，换页时不再另发请求。
 
 首次启动会自动执行 `scripts/ensure-setup.mjs`：
@@ -113,6 +115,7 @@ src/lib/fetch/      Scrapling 拉文，Readability 兜底
 src/lib/vocab/      生词本间隔重复
 src/lib/store/      客户端工作区状态
 scripts/            ensure-setup.mjs、scrapling_fetch.py 等
+.npmrc              安装时跳过原生模块编译，使用 better-sqlite3 预编译包
 ```
 
 ## 开发
