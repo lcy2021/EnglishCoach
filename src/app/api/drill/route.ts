@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getDrill, listDrillsPage, saveDrill, updateDrillResult } from "@/lib/db";
 import { readPage } from "@/lib/db/page";
-import { createDrill, gradeDrill } from "@/lib/drill/drill";
+import { createDrill, gradeDrill, hydrateDrillLex } from "@/lib/drill/drill";
 import { drillLevelSpec, type DrillPrompt } from "@/lib/drill/parse";
 
 export const runtime = "nodejs";
@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   if (id) {
     const drill = getDrill(id);
     if (!drill) return NextResponse.json({ error: "找不到这道题" }, { status: 404 });
-    return NextResponse.json({ drill });
+    return NextResponse.json({ drill: hydrateDrillLex(drill) });
   }
   const result = listDrillsPage(readPage(searchParams.get("page"), 1), readPage(searchParams.get("pageSize"), 7));
   return NextResponse.json({

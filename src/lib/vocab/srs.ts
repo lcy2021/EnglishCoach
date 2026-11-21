@@ -49,6 +49,16 @@ export function stageOf(box: number): "new" | "learning" | "mastered" {
   return box >= MASTERED_BOX ? "mastered" : "learning";
 }
 
+export interface VocabWordForm {
+  label: string;
+  text: string;
+}
+
+export interface VocabSense {
+  pos: string;
+  text: string;
+}
+
 export interface VocabWord {
   id: string;
   text: string;
@@ -63,6 +73,11 @@ export interface VocabWord {
   dueAt: string;
   lastReviewedAt: string | null;
   createdAt: string;
+  /** Filled from ECDICT when serving the word book / review. */
+  pos?: string;
+  forms?: VocabWordForm[];
+  /** Per-sense POS + definition from ECDICT (display only). */
+  senses?: VocabSense[];
 }
 
 export interface VocabSummary {

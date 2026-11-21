@@ -63,9 +63,11 @@ export function DrillBankView() {
     // Route first so DrillView is mounted before the one-shot pageCommand arrives.
     setRoute("drill");
     requestAnimationFrame(() => {
-      applyPatch({
-        pageCommand: { id: `open-${id}`, route: "drill", drillId: id },
-        statusMessage: "已打开这道题",
+      requestAnimationFrame(() => {
+        applyPatch({
+          pageCommand: { id: `open-${id}`, route: "drill", drillId: id },
+          statusMessage: "已打开这道题",
+        });
       });
     });
   }
@@ -102,7 +104,18 @@ export function DrillBankView() {
               whileHover={{ y: -2 }}
               transition={{ type: "spring", stiffness: 320, damping: 26, delay: Math.min(i, 8) * 0.05 }}
             >
-              <Card className="flex-row items-center justify-between gap-4 px-5 py-4">
+              <Card
+                role="button"
+                tabIndex={0}
+                className="flex-row items-center justify-between gap-4 px-5 py-4 cursor-pointer transition-colors hover:bg-muted/40"
+                onClick={() => openDrill(item.id)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    openDrill(item.id);
+                  }
+                }}
+              >
                 <div className="min-w-0">
                   <div className="truncate font-semibold">{item.zh}</div>
                   <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
@@ -114,7 +127,13 @@ export function DrillBankView() {
                     <span>{formatYmd(item.createdAt)}</span>
                   </div>
                 </div>
-                <Button className="shrink-0" onClick={() => openDrill(item.id)}>
+                <Button
+                  className="shrink-0"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    openDrill(item.id);
+                  }}
+                >
                   <ArrowUpRight aria-hidden />
                   打开
                 </Button>

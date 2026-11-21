@@ -8,6 +8,8 @@ export interface SaveWordInput {
   gloss: string;
   phonetic?: string;
   sentence?: string;
+  pos?: string;
+  forms?: Array<{ label: string; text: string }>;
   articleId?: string | null;
   source?: string;
 }

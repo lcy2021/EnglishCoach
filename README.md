@@ -40,27 +40,9 @@
 
 需要 Node.js 18+（`better-sqlite3` 为原生模块，不支持 Edge 运行时）。可选：Python 3（用于 Scrapling）。
 
-```bash
-cd english-coach
-npm install
-npm run dev
-```
-
-`npm install` 会读取项目里的 `.npmrc`（`ignore-scripts=true`）。`better-sqlite3` 13 已带上各平台预编译包，安装时直接使用这份二进制。Node.js 22 自带的 npm 10 在看到 `binding.gyp` 时仍会调用 node-gyp；在没有可用 C++ 工具链，或只有 Visual Studio 2026 的机器上，这次编译会失败。
-
-打开 [http://localhost:3010](http://localhost:3010)。每个页面有自己的地址（如 `/stats`、`/drill`、`/vocab`），刷新后仍停在当前页。文章阅读在 `/`。进入某个页面只请求该页自己的数据；侧栏的今日目标和生词数量随首次打开一起带上，换页时不再另发请求。
-
-首次启动会自动执行 `scripts/ensure-setup.mjs`：
-
-1. 缺少 `.env.local` 时从 `.env.example` 复制 —— **请填入你的 `LLM_API_KEY`**
-2. 缺少词典时下载 ECDICT 到 `data/stardict.db`（可能要几分钟）
-3. 本机有 Python 且未安装 Scrapling 时，按 `requirements.txt` 安装
-
-已存在的资源会被跳过。
-
 ### 配置
 
-编辑 `.env.local`，任意 OpenAI 兼容端点均可：
+先准备 `.env.local`（没有的话可从 `.env.example` 复制），任意 OpenAI 兼容端点均可：
 
 ```ini
 LLM_API_KEY=sk-...
@@ -75,11 +57,26 @@ LLM_MODEL=gpt-4o-mini
 
 | 环境变量 | 作用 |
 | --- | --- |
-| `SKIP_SETUP=1` | 整体跳过启动前的自动准备 |
-| `SKIP_DICT=1` / `SKIP_SCRAPLING=1` | 分别跳过词典 / Scrapling |
+| `SKIP_SETUP=1` | 跳过 `npm run dev` / `start` 前的自动准备 |
+| `SKIP_DICT=1` / `SKIP_SCRAPLING=1` | 分别跳过词典下载 / Scrapling |
 | `PYTHON` | `python` 不在 `PATH` 时指定解释器 |
 
-也可手动执行 `npm run setup`、`npm run dict:fetch`。pip 下载卡住时可换 PyPI 镜像重试。
+### 安装与启动
+
+```bash
+cd english-coach
+npm install
+npm run dev
+```
+
+- **`npm install`**：只装 Node 依赖，**不会**下载词典。
+- **`npm run dev` / `npm start`**：启动前会跑 `predev` / `prestart` → `scripts/ensure-setup.mjs`。这时若还没有 ECDICT，才会下载到 `data/stardict.db`（约两百兆压缩包，可能要几分钟；已存在则跳过）。同一次还会在缺少 `.env.local` 时从示例复制，并在有 Python 时按需安装 Scrapling。
+
+也可手动：`npm run setup`（完整准备）或 `npm run dict:fetch`（只下词典）。pip 卡住时可换 PyPI 镜像。
+
+`npm install` 会读取项目里的 `.npmrc`（`ignore-scripts=true`）。`better-sqlite3` 13 已带上各平台预编译包，安装时直接使用这份二进制。Node.js 22 自带的 npm 10 在看到 `binding.gyp` 时仍会调用 node-gyp；在没有可用 C++ 工具链，或只有 Visual Studio 2026 的机器上，这次编译会失败。
+
+打开 [http://localhost:3010](http://localhost:3010)。每个页面有自己的地址（如 `/stats`、`/drill`、`/vocab`），刷新后仍停在当前页。文章阅读在 `/`。进入某个页面只请求该页自己的数据；侧栏的今日目标和生词数量随首次打开一起带上，换页时不再另发请求。
 
 ## 使用流程
 

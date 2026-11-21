@@ -1,5 +1,7 @@
 import { getChatModel } from "@/lib/agent/model";
 import { listDrills } from "@/lib/db";
+import { ecdictReady, lookupEntries } from "@/lib/glossary/ecdict";
+import { enrichDrillLex } from "@/lib/glossary/morphology";
 import {
   gradeLocally,
   gradeSummary,
@@ -10,6 +12,25 @@ import {
   type DrillPrompt,
   type SlotGrade,
 } from "./parse";
+
+function withDictionaryLex(prompt: DrillPrompt): DrillPrompt {
+  if (!ecdictReady() || prompt.lex.length === 0) return prompt;
+  try {
+    return { ...prompt, lex: enrichDrillLex(prompt.lex, lookupEntries) };
+  } catch {
+    return prompt;
+  }
+}
+
+/** Fill POS / tense variants on saved drills (including older rows that lack them). */
+export function hydrateDrillLex<T extends { lex: DrillPrompt["lex"] }>(drill: T): T {
+  if (!ecdictReady() || drill.lex.length === 0) return drill;
+  try {
+    return { ...drill, lex: enrichDrillLex(drill.lex, lookupEntries) };
+  } catch {
+    return drill;
+  }
+}
 
 function textOf(content: unknown): string {
   if (typeof content === "string") return content;
@@ -31,7 +52,7 @@ function textOf(content: unknown): string {
 }
 
 const DRILL_SYSTEM =
-  'You set one translation item for a Chinese learner of English. Reply ONLY JSON: {"zh":string,"words":string[],"end":"."|"?"|"!","phrases":[{"text":string,"gloss":string}],"vocab":[{"text":string,"gloss":string}]}. zh is one natural Chinese sentence matching the given tags and topic. words is its English translation in order, with no punctuation inside a token. Keep apostrophes and hyphens. Match the requested difficulty and word count. If a tag names an exam or school level (初中, 高中, 四级, 六级, 考研), keep vocabulary and sentence shape in that range. If a tag is a domain or scene (生活用语, 职场, 科技), set the content there. end is the closing mark. phrases: 1-3 useful multi-word chunks from the English sentence with short Chinese glosses. vocab: 2-5 worthwhile single words (not a/an/the/be/do/have/to/of/in/on/for) with short Chinese glosses. Do not write the English sentence anywhere except words / phrases / vocab.';
+  'You set one translation item for a Chinese learner of English. Reply ONLY JSON: {"zh":string,"words":string[],"end":"."|"?"|"!","phrases":[{"text":string,"gloss":string,"pos":string}],"vocab":[{"text":string,"gloss":string,"pos":string,"forms":[{"label":string,"text":string}]}]}. zh is one natural Chinese sentence matching the given tags and topic. words is its English translation in order, with no punctuation inside a token. Keep apostrophes and hyphens. Match the requested difficulty and word count. If a tag names an exam or school level (初中, 高中, 四级, 六级, 考研), keep vocabulary and sentence shape in that range. If a tag is a domain or scene (生活用语, 职场, 科技), set the content there. end is the closing mark. phrases: 1-3 useful multi-word chunks from the English sentence with short Chinese glosses; pos is a short Chinese label such as 短语. vocab: 2-5 worthwhile single words (not a/an/the/be/do/have/to/of/in/on/for) with short Chinese glosses; pos is 名词/动词/形容词/副词/介词/连词/代词 when clear; for verbs and adjectives include forms with Chinese labels 过去式/过去分词/现在分词/第三人称单数/比较级/最高级/复数 when they differ from text. Do not write the English sentence anywhere except words / phrases / vocab / forms.';
 
 /** Ask the model for one Chinese sentence from the tags and difficulty the learner chose. */
 export async function createDrill(
@@ -65,7 +86,7 @@ export async function createDrill(
               : `Tags and topic: ${focus}\nDifficulty: ${spec.level}. ${spec.note}\nThe previous reply did not contain ${spec.min} to ${spec.max} English words. Reply again with ${spec.min} to ${spec.max} words.${angle}${avoid}`,
         },
       ]);
-      return parseDrillPrompt(textOf(raw.content));
+      return withDictionaryLex(parseDrillPrompt(textOf(raw.content)));
     } catch (error) {
       lastError = error instanceof Error ? error : new Error("出题失败");
     }

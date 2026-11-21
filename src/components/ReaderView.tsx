@@ -407,7 +407,7 @@ export function ReaderView() {
   const finished = selected !== null && selected === total - 1;
 
   return (
-    <section className="sheet !max-w-[760px]">
+    <section className="sheet !max-w-[920px]">
       {/* sticky reading bar */}
       <div className="sticky -top-11 z-30 -mx-3 mb-6 flex items-center gap-3 rounded-2xl border bg-background/85 px-2 py-1.5 backdrop-blur">
         <Button variant="ghost" size="sm" onClick={leaveArticle}>
@@ -541,11 +541,13 @@ export function ReaderView() {
                   {extractions
                     .filter((item) => item.paragraphIndex === p.index)
                     .map((item) => (
-                      <li key={item.id}>
+                      <li key={item.id} className="gloss-frame">
                         <Badge variant={item.kind === "phrase" ? "secondary" : "default"}>
                           {item.kind === "phrase" ? "短语" : "生词"}
                         </Badge>
-                        <b>{item.text}</b>
+                        <b>
+                          <GlossableText text={item.text} />
+                        </b>
                         <span>{item.gloss}</span>
                         <SaveWordButton text={item.text} gloss={item.gloss} sentence={item.sentence} source="explain" className="ml-auto self-center" />
                       </li>
@@ -615,15 +617,19 @@ export function ReaderView() {
           </h2>
           <ul className="divide-y">
             {extractions.map((item) => (
-              <li key={item.id} className="flex items-start gap-3 py-2.5">
+              <li key={item.id} className="gloss-frame flex items-start gap-3 py-2.5">
                 <Badge variant={item.kind === "phrase" ? "secondary" : "default"} className="mt-0.5">
                   {item.kind === "phrase" ? "短语" : "生词"}
                 </Badge>
                 <div className="min-w-0 text-sm">
-                  <b className="font-display text-base font-semibold">{item.text}</b>
+                  <b className="font-display text-base font-semibold">
+                    <GlossableText text={item.text} />
+                  </b>
                   <span className="ml-2 text-muted-foreground">{item.gloss}</span>
                   {item.sentence ? (
-                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{item.sentence}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                      <GlossableText text={item.sentence} />
+                    </p>
                   ) : null}
                 </div>
                 <SaveWordButton text={item.text} gloss={item.gloss} sentence={item.sentence} source="explain" className="ml-auto" />

@@ -11,6 +11,8 @@ export function SaveWordButton({
   gloss,
   sentence,
   phonetic,
+  pos,
+  forms,
   source = "reader",
   className,
 }: {
@@ -18,6 +20,8 @@ export function SaveWordButton({
   gloss: string;
   sentence?: string;
   phonetic?: string;
+  pos?: string;
+  forms?: Array<{ label: string; text: string }>;
   source?: string;
   className?: string;
 }) {
@@ -38,6 +42,8 @@ export function SaveWordButton({
           gloss,
           sentence,
           phonetic,
+          pos,
+          forms,
           source,
           articleId: useWorkspace.getState().article?.id ?? null,
         });

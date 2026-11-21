@@ -19,6 +19,9 @@ function missingDictionary(index: number) {
       gloss: "本地词典未就绪",
       phrase: "",
       phonetic: "",
+      senses: [],
+      forms: [],
+      lemma: "",
       start: index,
       end: index,
       source: "ecdict",
@@ -31,10 +34,14 @@ function lookup(tokens: string[], index: number) {
   if (!ecdictReady()) return missingDictionary(index);
   const hit = defineTokens(tokens, index);
   if (!hit) {
+    const phrase = tokens[index] ?? "";
     return NextResponse.json({
-      phrase: tokens[index] ?? "",
+      phrase,
       gloss: "未收录",
       phonetic: "",
+      senses: [],
+      forms: [],
+      lemma: phrase,
       start: index,
       end: index,
       source: "ecdict",

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Check, RotateCcw } from "lucide-react";
 import { useWorkspace } from "@/lib/store/workspace";
 import { motion } from "motion/react";
+import { GlossableText } from "@/components/HoverWord";
 import { EmptyIllustration } from "@/components/illustrations";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -113,8 +114,10 @@ export function WrongBookView() {
                     {new Date(item.createdAt).toLocaleString()}
                   </span>
                 </CardHeader>
-                <CardContent className="space-y-2">
-                  <p className="leading-relaxed">{item.snippet}</p>
+                <CardContent className="gloss-frame space-y-2">
+                  <p className="leading-relaxed">
+                    <GlossableText text={item.snippet} />
+                  </p>
                   {item.userAnswer ? (
                     <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
                       你的回答：{item.userAnswer}

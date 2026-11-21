@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, ChevronUp, Flame, Lightbulb, ListChecks, Plus, SkipForward, SlidersHorizontal, Sparkles, Square, Volume2, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { Confetti } from "@/components/Confetti";
+import { GlossableText } from "@/components/HoverWord";
 import { pokeOwl } from "@/components/OwlPet";
 import { SaveWordButton } from "@/components/SaveWordButton";
 import { throwText } from "@/components/TextThrow";
@@ -548,12 +549,24 @@ export function DrillView() {
                         ) : null}
                       </span>
                       <span className={`drill-fix ${status}`}>
-                        {grade && status !== "correct" ? grade.expected : ""}
+                        {grade && status !== "correct" ? (
+                          <span className="gloss-frame">
+                            <GlossableText text={grade.expected} />
+                          </span>
+                        ) : (
+                          ""
+                        )}
                       </span>
                     </label>
                   );
                 })}
               </div>
+
+              {grades ? (
+                <div className="gloss-frame rounded-xl border bg-muted/30 px-3 py-2 font-display text-base leading-relaxed">
+                  <GlossableText text={englishSentence(prompt)} />
+                </div>
+              ) : null}
 
               {grades ? (
                 <div
@@ -610,13 +623,31 @@ export function DrillView() {
                         <Badge variant={item.kind === "phrase" ? "secondary" : "default"} className="mt-0.5">
                           {item.kind === "phrase" ? "短语" : "生词"}
                         </Badge>
-                        <div className="min-w-0 flex-1 text-sm">
-                          <b className="font-semibold">{item.text}</b>
-                          <span className="ml-2 text-muted-foreground">{item.gloss}</span>
+                        <div className="gloss-frame min-w-0 flex-1 text-sm">
+                          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                            <b className="font-semibold">
+                              <GlossableText text={item.text} />
+                            </b>
+                            {item.phonetic ? (
+                              <span className="text-xs font-medium text-primary">{item.phonetic}</span>
+                            ) : null}
+                            {item.pos ? (
+                              <span className="text-xs text-muted-foreground">{item.pos}</span>
+                            ) : null}
+                          </div>
+                          <p className="mt-0.5 text-muted-foreground">{item.gloss}</p>
+                          {item.forms && item.forms.length > 0 ? (
+                            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                              {item.forms.map((form) => `${form.label} ${form.text}`).join(" · ")}
+                            </p>
+                          ) : null}
                         </div>
                         <SaveWordButton
                           text={item.text}
                           gloss={item.gloss}
+                          phonetic={item.phonetic}
+                          pos={item.pos}
+                          forms={item.forms}
                           sentence={englishSentence(prompt)}
                           source="drill"
                           className="ml-auto"

@@ -2,6 +2,8 @@
 
 export const MAX_PHRASE_WORDS = 6;
 const GLOSS_LINE_LIMIT = 4;
+/** Hover / define cards list every sense the dictionary has. */
+const DEFINE_SENSE_LIMIT = 24;
 
 export interface DictEntry {
   word: string;
@@ -20,11 +22,63 @@ export interface GlossSense {
   text: string;
 }
 
+/** One labeled inflection from ECDICT `exchange` (e.g. 过去式 / went). */
+export interface WordForm {
+  label: string;
+  text: string;
+}
+
+/** ECDICT lemma exchange codes → Chinese labels for learners. */
+const EXCHANGE_FORM_LABELS: Record<string, string> = {
+  p: "过去式",
+  d: "过去分词",
+  i: "现在分词",
+  "3": "第三人称单数",
+  s: "复数",
+  r: "比较级",
+  t: "最高级",
+};
+
+/**
+ * Parse a lemma's ECDICT `exchange` into labeled variants.
+ * Example: `p:went/d:gone/i:going/3:goes` → 过去式 went, …
+ * Inflected rows that only have `0:lemma/1:p` yield nothing; look up the lemma first.
+ */
+export function formsFromExchange(exchange: string): WordForm[] {
+  const forms: WordForm[] = [];
+  const seen = new Set<string>();
+  for (const part of exchange.split("/")) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const colon = trimmed.indexOf(":");
+    if (colon <= 0) continue;
+    const code = trimmed.slice(0, colon).toLowerCase();
+    const text = trimmed.slice(colon + 1).trim();
+    if (!text || code === "0" || code === "1") continue;
+    const label = EXCHANGE_FORM_LABELS[code];
+    if (!label) continue;
+    const key = `${label}:${text.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    forms.push({ label, text });
+  }
+  return forms;
+}
+
+/** Best Chinese POS label from ECDICT `pos` / translation / exchange. */
+export function posLabel(posField: string, exchange: string, phrase = false): string {
+  return fallbackPos(posField, exchange, phrase);
+}
+
 export interface GlossMatch {
   phrase: string;
   gloss: string;
   phonetic: string;
   senses: GlossSense[];
+  /** Inflection table from ECDICT `exchange` (dictionary only). */
+  forms: WordForm[];
+  /** Lemma when the hit is an inflected surface form. */
+  lemma: string;
   start: number;
   end: number;
 }
@@ -108,6 +162,7 @@ export function parseSenses(
   posField: string,
   exchange: string,
   phrase: boolean,
+  limit: number = GLOSS_LINE_LIMIT,
 ): GlossSense[] {
   const fallback = fallbackPos(posField, exchange, phrase);
   const senses: GlossSense[] = [];
@@ -130,7 +185,7 @@ export function parseSenses(
     if (text) pushSense(senses, { pos: fallback, text });
   }
 
-  return senses.slice(0, GLOSS_LINE_LIMIT);
+  return senses.slice(0, Math.max(1, limit));
 }
 
 interface Candidate {
@@ -213,6 +268,7 @@ export function matchAt(
       resolved.pos,
       entry.exchange,
       candidate.end > candidate.start,
+      DEFINE_SENSE_LIMIT,
     );
     const gloss = senses.map((sense) => sense.text).join("；");
     if (!gloss) continue;
@@ -241,11 +297,17 @@ export function matchAt(
   }
 
   if (!best) return null;
+  const lemmaName = lemmaFromExchange(best.entry.exchange);
+  const lemmaEntry = lemmaName ? lookup([lemmaName]).get(lemmaName) : undefined;
+  const forms = formsFromExchange((lemmaEntry ?? best.entry).exchange);
+  const phrase = best.entry.word || best.phrase;
   return {
-    phrase: best.entry.word || best.phrase,
+    phrase,
     gloss: best.gloss,
     phonetic: best.phonetic,
     senses: best.senses,
+    forms,
+    lemma: lemmaEntry?.word || lemmaName || phrase,
     start: best.start,
     end: best.end,
   };

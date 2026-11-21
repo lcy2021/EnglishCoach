@@ -1,11 +1,20 @@
+import type { WordForm } from "@/lib/glossary/match";
+
 export const DRILL_LEVELS = ["入门", "进阶", "较难"] as const;
 
 export type DrillLevel = (typeof DRILL_LEVELS)[number];
+
+export type { WordForm };
 
 export interface DrillLexItem {
   kind: "phrase" | "word";
   text: string;
   gloss: string;
+  /** Chinese part-of-speech label, filled from ECDICT when available. */
+  pos?: string;
+  phonetic?: string;
+  /** Tense / number / degree variants (过去式, 复数, …). */
+  forms?: WordForm[];
 }
 
 export interface DrillPrompt {
@@ -90,6 +99,25 @@ function readJson(raw: string): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
+function readForms(value: unknown): WordForm[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const forms: WordForm[] = [];
+  const seen = new Set<string>();
+  for (const row of value) {
+    if (!row || typeof row !== "object") continue;
+    const label =
+      typeof (row as { label?: unknown }).label === "string" ? (row as { label: string }).label.trim() : "";
+    const text =
+      typeof (row as { text?: unknown }).text === "string" ? (row as { text: string }).text.trim() : "";
+    if (!label || !text) continue;
+    const key = `${label}:${text.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    forms.push({ label, text });
+  }
+  return forms.length > 0 ? forms : undefined;
+}
+
 function readLexList(value: unknown, kind: DrillLexItem["kind"], limit: number): DrillLexItem[] {
   if (!Array.isArray(value)) return [];
   const seen = new Set<string>();
@@ -103,7 +131,21 @@ function readLexList(value: unknown, kind: DrillLexItem["kind"], limit: number):
     const key = text.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    items.push({ kind, text, gloss });
+    const pos =
+      typeof (row as { pos?: unknown }).pos === "string" ? (row as { pos: string }).pos.trim() : "";
+    const phonetic =
+      typeof (row as { phonetic?: unknown }).phonetic === "string"
+        ? (row as { phonetic: string }).phonetic.trim()
+        : "";
+    const forms = readForms((row as { forms?: unknown }).forms);
+    items.push({
+      kind,
+      text,
+      gloss,
+      ...(pos ? { pos } : {}),
+      ...(phonetic ? { phonetic } : {}),
+      ...(forms ? { forms } : {}),
+    });
     if (items.length >= limit) break;
   }
   return items;

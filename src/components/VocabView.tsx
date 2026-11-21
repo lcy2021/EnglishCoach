@@ -12,6 +12,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { BookLoader } from "@/components/ui/loader";
 import { Pager } from "@/components/ui/pager";
+import { GlossableText } from "@/components/HoverWord";
 import { speak, useSpeech } from "@/lib/speech";
 import { useVocab } from "@/lib/store/vocab";
 import { useWorkspace } from "@/lib/store/workspace";
@@ -19,19 +20,6 @@ import { formatInterval, schedule, stageOf, type Rating, type VocabSummary, type
 import { cn } from "@/lib/utils";
 
 type Tab = "review" | "all";
-
-/** The example sentence with the saved word picked out. */
-function Highlighted({ sentence, word }: { sentence: string; word: string }) {
-  const index = sentence.toLowerCase().indexOf(word.toLowerCase());
-  if (index < 0) return <>{sentence}</>;
-  return (
-    <>
-      {sentence.slice(0, index)}
-      <mark className="rounded bg-amber-200/70 px-0.5 text-inherit">{sentence.slice(index, index + word.length)}</mark>
-      {sentence.slice(index + word.length)}
-    </>
-  );
-}
 
 function dueLabel(word: VocabWord): string {
   const ms = new Date(word.dueAt).getTime() - Date.now();
@@ -43,6 +31,12 @@ const RATINGS: ReadonlyArray<{ key: Rating; label: string; hotkey: string; tone:
   { key: "hard", label: "模糊", hotkey: "2", tone: "border-border bg-muted text-foreground hover:bg-muted/70" },
   { key: "good", label: "记得", hotkey: "3", tone: "border-primary/50 bg-accent text-accent-foreground hover:bg-accent/70" },
 ];
+
+function posTagsOf(word: VocabWord): string[] {
+  const fromSenses = (word.senses ?? []).map((sense) => sense.pos.trim());
+  const fromPos = word.pos ? word.pos.split("·").map((part) => part.trim()) : [];
+  return [...new Set([...fromSenses, ...fromPos].filter(Boolean))];
+}
 
 function ReviewSession({ initial, onExit }: { initial: VocabWord[]; onExit: () => void }) {
   const [queue, setQueue] = useState<VocabWord[]>(initial);
@@ -161,8 +155,8 @@ function ReviewSession({ initial, onExit }: { initial: VocabWord[]; onExit: () =
               </div>
               {current.phonetic ? <p className="text-sm font-medium text-primary">{current.phonetic}</p> : null}
               {current.sentence ? (
-                <p className="mt-2 max-w-prose font-display text-lg leading-relaxed text-muted-foreground">
-                  <Highlighted sentence={current.sentence} word={current.text} />
+                <p className="gloss-frame mt-2 max-w-prose font-display text-lg leading-relaxed text-muted-foreground">
+                  <GlossableText text={current.sentence} />
                 </p>
               ) : null}
 
@@ -170,9 +164,55 @@ function ReviewSession({ initial, onExit }: { initial: VocabWord[]; onExit: () =
                 <motion.div
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="mt-3 w-full max-w-prose rounded-2xl bg-accent/60 px-5 py-4"
+                  className="mt-3 w-full max-w-prose rounded-2xl bg-accent/60 px-5 py-4 text-left"
                 >
-                  <p className="text-lg font-semibold leading-relaxed text-accent-foreground">{current.gloss || "(没有释义)"}</p>
+                  {posTagsOf(current).length > 0 ? (
+                    <div className="mb-3 flex flex-wrap gap-1.5">
+                      {posTagsOf(current).map((tag) => (
+                        <Badge key={tag} variant="secondary" className="text-xs font-semibold">
+                          {tag}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : null}
+                  {current.forms && current.forms.length > 0 ? (
+                    <ul className="mb-3 space-y-1.5 border-b border-accent-foreground/15 pb-3">
+                      {current.forms.map((form) => (
+                        <li
+                          key={`${form.label}-${form.text}`}
+                          className="flex gap-3 text-base leading-relaxed text-accent-foreground"
+                        >
+                          <span className="w-28 shrink-0 text-sm font-bold text-accent-foreground/75">
+                            {form.label}
+                          </span>
+                          <span className="font-display font-semibold">{form.text}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {current.senses && current.senses.some((sense) => sense.pos) ? (
+                    <ul className="space-y-2">
+                      {current.senses.map((sense, index) => (
+                        <li key={`${sense.pos}-${index}`} className="text-base leading-relaxed text-accent-foreground">
+                          {sense.pos ? (
+                            <span className="mr-2 inline-block min-w-[3em] text-sm font-bold text-accent-foreground/75">
+                              {sense.pos}
+                            </span>
+                          ) : null}
+                          {sense.text}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-lg font-semibold leading-relaxed text-accent-foreground">
+                        {current.senses?.[0]?.text || current.gloss || "(没有释义)"}
+                      </p>
+                      {!current.forms?.length && !posTagsOf(current).length ? (
+                        <p className="text-xs text-accent-foreground/60">词典未收录词性与变形</p>
+                      ) : null}
+                    </div>
+                  )}
                 </motion.div>
               ) : null}
             </div>
@@ -304,7 +344,7 @@ export function VocabView() {
 
   if (session) {
     return (
-      <section className="sheet !max-w-[680px]">
+      <section className="sheet !max-w-[820px]">
         <ReviewSession
           initial={session}
           onExit={() => {
@@ -317,7 +357,7 @@ export function VocabView() {
   }
 
   return (
-    <section className="sheet !max-w-[760px] space-y-5">
+    <section className="sheet !max-w-[920px] space-y-5">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">生词本</h1>
@@ -425,10 +465,42 @@ export function VocabView() {
                           </Badge>
                           <span className="text-xs text-muted-foreground">{dueLabel(w)}</span>
                         </div>
-                        <p className="text-sm">{w.gloss || "—"}</p>
+                        {w.pos ? (
+                          <div className="flex flex-wrap gap-1">
+                            {w.pos.split("·").map((tag) => tag.trim()).filter(Boolean).map((tag) => (
+                              <Badge key={tag} variant="outline" className="text-[11px] font-semibold">
+                                {tag}
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : null}
+                        {w.senses && w.senses.length > 0 ? (
+                          <ul className="space-y-0.5 text-sm">
+                            {w.senses.slice(0, 4).map((sense, index) => (
+                              <li key={`${sense.pos}-${index}`}>
+                                <span className="mr-1.5 text-xs font-bold text-muted-foreground">
+                                  {sense.pos || "释义"}
+                                </span>
+                                {sense.text}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-sm">{w.gloss || "—"}</p>
+                        )}
+                        {w.forms && w.forms.length > 0 ? (
+                          <ul className="space-y-0.5 text-xs leading-relaxed text-muted-foreground">
+                            {w.forms.map((form) => (
+                              <li key={`${form.label}-${form.text}`}>
+                                <span className="mr-2 font-semibold">{form.label}</span>
+                                {form.text}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
                         {w.sentence ? (
-                          <p className="line-clamp-2 font-display text-sm text-muted-foreground">
-                            <Highlighted sentence={w.sentence} word={w.text} />
+                          <p className="gloss-frame line-clamp-2 font-display text-sm text-muted-foreground">
+                            <GlossableText text={w.sentence} />
                           </p>
                         ) : null}
                       </div>

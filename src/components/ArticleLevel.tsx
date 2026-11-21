@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ChevronDown, Highlighter, Star } from "lucide-react";
+import { GlossableText } from "@/components/HoverWord";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SaveWordButton } from "@/components/SaveWordButton";
@@ -100,15 +101,22 @@ export function ArticleLevel({ analysis }: { analysis: Analysis }) {
           </div>
           <ul className="max-h-80 divide-y overflow-auto">
             {analysis.hard.map((w) => (
-              <li key={w.lemma} className="flex items-start gap-3 py-2">
+              <li key={w.lemma} className="gloss-frame flex items-start gap-3 py-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-baseline gap-x-2">
-                    <b className="font-display text-base font-semibold">{w.lemma}</b>
+                    <b className="font-display text-base font-semibold">
+                      <GlossableText text={w.lemma} />
+                    </b>
                     {w.phonetic ? <span className="text-xs text-primary">{w.phonetic}</span> : null}
                     <Badge variant="outline">{w.level}</Badge>
                     {w.count > 1 ? <span className="text-xs text-muted-foreground">出现 {w.count} 次</span> : null}
                   </div>
                   <p className="text-sm text-muted-foreground">{w.gloss || "(词典暂无释义)"}</p>
+                  {w.sentence ? (
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                      <GlossableText text={w.sentence} />
+                    </p>
+                  ) : null}
                 </div>
                 <SaveWordButton
                   text={w.lemma}

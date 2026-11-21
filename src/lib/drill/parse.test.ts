@@ -23,6 +23,43 @@ describe("parseDrillPrompt", () => {
     ]);
   });
 
+  it("keeps POS and tense forms when the model supplies them", () => {
+    const parsed = parseDrillPrompt(
+      JSON.stringify({
+        zh: "他每天跑步。",
+        words: ["He", "runs", "every", "day"],
+        end: ".",
+        phrases: [{ text: "every day", gloss: "每天", pos: "短语" }],
+        vocab: [
+          {
+            text: "runs",
+            gloss: "跑步",
+            pos: "动词",
+            forms: [
+              { label: "过去式", text: "ran" },
+              { label: "过去分词", text: "run" },
+              { label: "现在分词", text: "running" },
+            ],
+          },
+        ],
+      }),
+    );
+    assert.deepEqual(parsed.lex, [
+      { kind: "phrase", text: "every day", gloss: "每天", pos: "短语" },
+      {
+        kind: "word",
+        text: "runs",
+        gloss: "跑步",
+        pos: "动词",
+        forms: [
+          { label: "过去式", text: "ran" },
+          { label: "过去分词", text: "run" },
+          { label: "现在分词", text: "running" },
+        ],
+      },
+    ]);
+  });
+
   it("rejects a reply that is too short to place underlines", () => {
     assert.throws(() => parseDrillPrompt('{"zh":"你好。","words":["Hi"]}'), /词数不合适/);
   });

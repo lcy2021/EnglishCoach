@@ -226,14 +226,21 @@ export function AppShell() {
       if (Object.keys(speech).length > 0) useSpeech.getState().set(speech);
     }
     const commandId = pageCommand.id;
-    // Give page views a turn to consume drillId / refresh before clearing.
+    // Views mount from the URL. Keep the command until pathname matches so drillId
+    // survives router.push; drop it if the user navigates somewhere else instead.
+    if (route !== pageCommand.route) {
+      if (storeRoute !== pageCommand.route) {
+        useWorkspace.setState({ pageCommand: null });
+      }
+      return;
+    }
     const timer = window.setTimeout(() => {
       if (useWorkspace.getState().pageCommand?.id === commandId) {
         useWorkspace.setState({ pageCommand: null });
       }
     }, 50);
     return () => window.clearTimeout(timer);
-  }, [pageCommand]);
+  }, [pageCommand, route, storeRoute]);
 
   return (
     <MotionConfig reducedMotion="user">

@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { collectParagraphGlosses, matchAt, type DictEntry, type DictLookup } from "./match.ts";
+import {
+  collectParagraphGlosses,
+  formsFromExchange,
+  matchAt,
+  type DictEntry,
+  type DictLookup,
+} from "./match.ts";
+import { enrichDrillLex, enrichVocabMorphology } from "./morphology.ts";
 
 function entry(partial: Partial<DictEntry> & Pick<DictEntry, "word" | "translation">): DictEntry {
   return {
@@ -185,5 +192,79 @@ describe("matchAt", () => {
     const hit = matchAt(["a", "lot", "of"], 1, lookup);
     assert.equal(hit?.senses[0]?.pos, "短语");
     assert.equal(hit?.senses[0]?.text, "许多的");
+  });
+});
+
+describe("formsFromExchange", () => {
+  it("reads tense and number labels from a lemma exchange string", () => {
+    assert.deepEqual(formsFromExchange("p:went/d:gone/i:going/3:goes"), [
+      { label: "过去式", text: "went" },
+      { label: "过去分词", text: "gone" },
+      { label: "现在分词", text: "going" },
+      { label: "第三人称单数", text: "goes" },
+    ]);
+  });
+
+  it("ignores 0:/1: pointers on inflected rows", () => {
+    assert.deepEqual(formsFromExchange("0:go/1:p"), []);
+  });
+});
+
+describe("enrichDrillLex", () => {
+  it("fills POS and tense forms from the lemma entry", () => {
+    const lookup = dict([
+      entry({
+        word: "met",
+        translation: "v. meet 的过去式",
+        exchange: "0:meet/1:p",
+      }),
+      entry({
+        word: "meet",
+        pos: "v:80/n:20",
+        phonetic: "miːt",
+        translation: "v. 遇见\nn. 运动会",
+        exchange: "p:met/d:met/i:meeting/3:meets",
+      }),
+    ]);
+    const [item] = enrichDrillLex([{ kind: "word", text: "met", gloss: "遇见" }], lookup);
+    assert.equal(item?.pos, "动词");
+    assert.equal(item?.phonetic, "/miːt/");
+    assert.deepEqual(item?.forms, [
+      { label: "过去式", text: "met" },
+      { label: "过去分词", text: "met" },
+      { label: "现在分词", text: "meeting" },
+      { label: "第三人称单数", text: "meets" },
+    ]);
+  });
+});
+
+describe("enrichVocabMorphology", () => {
+  it("attaches POS and forms for word-book review", () => {
+    const lookup = dict([
+      entry({
+        word: "book",
+        pos: "n:70/v:30",
+        translation: "n. 书\nv. 预订",
+        exchange: "s:books",
+      }),
+    ]);
+    const [word] = enrichVocabMorphology([{ text: "book", gloss: "书", phonetic: "" }], lookup);
+    assert.equal(word?.pos, "名词 · 动词");
+    assert.deepEqual(word?.forms, [{ label: "复数", text: "books" }]);
+    assert.equal(word?.senses?.length, 2);
+  });
+
+  it("does not invent forms when ECDICT has no exchange", () => {
+    const lookup = dict([
+      entry({
+        word: "refactoring",
+        translation: "[网络] 重构；代码重构；重整",
+      }),
+    ]);
+    const [word] = enrichVocabMorphology(
+      [{ text: "refactoring", gloss: "重构", phonetic: "" }],
+      lookup,
+    );
+    assert.deepEqual(word?.forms, []);
   });
 });

@@ -10,8 +10,11 @@ const root = path.resolve(import.meta.dirname, "..");
 const dataDir = path.join(root, "data");
 const zipPath = path.join(dataDir, "ecdict-sqlite-28.zip");
 const dbPath = path.join(dataDir, "stardict.db");
-const releaseUrl =
-  "https://github.com/skywind3000/ECDICT/releases/download/1.0.28/ecdict-sqlite-28.zip";
+const releasePath = "skywind3000/ECDICT/releases/download/1.0.28/ecdict-sqlite-28.zip";
+const releaseUrls = [
+  `https://ghfast.top/https://github.com/${releasePath}`,
+  `https://github.com/${releasePath}`,
+];
 
 async function exists(file) {
   try {
@@ -23,12 +26,22 @@ async function exists(file) {
 }
 
 async function download() {
-  console.log(`Downloading ${releaseUrl}`);
-  const response = await fetch(releaseUrl, { redirect: "follow" });
-  if (!response.ok || !response.body) {
-    throw new Error(`Download failed: ${response.status}`);
+  let lastError = null;
+  for (const releaseUrl of releaseUrls) {
+    try {
+      console.log(`Downloading ${releaseUrl}`);
+      const response = await fetch(releaseUrl, { redirect: "follow" });
+      if (!response.ok || !response.body) {
+        throw new Error(`Download failed: ${response.status}`);
+      }
+      await pipeline(response.body, createWriteStream(zipPath));
+      return;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      console.warn(lastError.message);
+    }
   }
-  await pipeline(response.body, createWriteStream(zipPath));
+  throw lastError ?? new Error("Download failed");
 }
 
 async function findDatabase(dir) {

@@ -552,6 +552,25 @@ function readGrades(json: string | null): SlotGrade[] | null {
   return grades;
 }
 
+function readLexForms(value: unknown): DrillLexItem["forms"] {
+  if (!Array.isArray(value)) return undefined;
+  const forms: NonNullable<DrillLexItem["forms"]> = [];
+  const seen = new Set<string>();
+  for (const row of value) {
+    if (!row || typeof row !== "object") continue;
+    const label =
+      typeof (row as { label?: unknown }).label === "string" ? (row as { label: string }).label.trim() : "";
+    const text =
+      typeof (row as { text?: unknown }).text === "string" ? (row as { text: string }).text.trim() : "";
+    if (!label || !text) continue;
+    const key = `${label}:${text.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    forms.push({ label, text });
+  }
+  return forms.length > 0 ? forms : undefined;
+}
+
 function readLex(json: string | null): DrillLexItem[] {
   if (!json) return [];
   let parsed: unknown;
@@ -573,7 +592,21 @@ function readLex(json: string | null): DrillLexItem[] {
     const trimmed = text.trim();
     const meaning = gloss.trim();
     if (!trimmed || !meaning) continue;
-    items.push({ kind, text: trimmed, gloss: meaning });
+    const pos =
+      typeof (row as { pos?: unknown }).pos === "string" ? (row as { pos: string }).pos.trim() : "";
+    const phonetic =
+      typeof (row as { phonetic?: unknown }).phonetic === "string"
+        ? (row as { phonetic: string }).phonetic.trim()
+        : "";
+    const forms = readLexForms((row as { forms?: unknown }).forms);
+    items.push({
+      kind,
+      text: trimmed,
+      gloss: meaning,
+      ...(pos ? { pos } : {}),
+      ...(phonetic ? { phonetic } : {}),
+      ...(forms ? { forms } : {}),
+    });
   }
   return items;
 }
