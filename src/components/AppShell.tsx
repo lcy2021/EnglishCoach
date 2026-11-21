@@ -15,14 +15,15 @@ import {
 } from "lucide-react";
 import { motion, MotionConfig } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
+import { useRouter } from "nextjs-toploader/app";
 import { useWorkspace, type AppRoute } from "@/lib/store/workspace";
 import { pathFromRoute, routeFromPath } from "@/lib/route-path";
 import { GoalRing } from "@/components/GoalRing";
 import { useGoal } from "@/lib/store/goal";
 import { OwlPet, pokeOwl } from "@/components/OwlPet";
 import { TextThrow } from "@/components/TextThrow";
-import { OwlMark } from "@/components/illustrations";
+import { Mascot } from "@/components/illustrations";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatCount } from "@/components/charts";
@@ -169,6 +170,9 @@ function NavButton({
 export function AppShell() {
   const pathname = usePathname();
   const router = useRouter();
+  // nextjs-toploader/app rebuilds the router object every render; keep a stable ref for effects.
+  const routerRef = useRef(router);
+  routerRef.current = router;
   const route = routeFromPath(pathname);
   const storeRoute = useWorkspace((s) => s.route);
   const chatOpen = useWorkspace((s) => s.chatOpen);
@@ -179,14 +183,14 @@ export function AppShell() {
   useLayoutEffect(() => {
     const canonical = pathFromRoute(route);
     if (canonical !== pathname) {
-      router.replace(canonical);
+      routerRef.current.replace(canonical);
       return;
     }
     if (useWorkspace.getState().route !== route) {
       routeFromUrl.current = true;
       useWorkspace.setState({ route });
     }
-  }, [pathname, route, router]);
+  }, [pathname, route]);
 
   useEffect(() => {
     if (routeFromUrl.current) {
@@ -194,8 +198,8 @@ export function AppShell() {
       return;
     }
     const path = pathFromRoute(storeRoute);
-    if (path !== pathname) router.push(path);
-  }, [storeRoute, pathname, router]);
+    if (path !== pathname) routerRef.current.push(path);
+  }, [storeRoute, pathname]);
   const setChatOpen = useWorkspace((s) => s.setChatOpen);
   const dueWords = useVocab((s) => s.due);
   const bankActive = (BANK_ROUTES as readonly string[]).includes(route);
@@ -247,11 +251,8 @@ export function AppShell() {
     <div className={chatOpen ? "app chat-open" : "app"}>
       <aside className="rail !border-sidebar-border !bg-sidebar !px-4">
         <div className="flex items-center gap-2.5 px-2 pb-6">
-          <div
-            aria-hidden
-            className="logo-tile grid size-10 place-items-center rounded-xl bg-primary text-primary-foreground shadow-md shadow-primary/30"
-          >
-            <OwlMark className="size-7" />
+          <div aria-hidden className="logo-tile size-10 overflow-visible">
+            <Mascot className="w-full" float={false} />
           </div>
           <span className="text-lg font-bold tracking-tight text-foreground">English Coach</span>
         </div>

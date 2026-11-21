@@ -942,6 +942,61 @@ body {
   }
 }
 
+/* ---------- top loader: Microsoft Copilot–style AI light ribbon ---------- */
+@keyframes copilot-flow {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+#nprogress {
+  pointer-events: none;
+}
+#nprogress .bar {
+  height: 2px !important;
+  overflow: visible !important;
+  background: linear-gradient(
+    90deg,
+    #00bcf2 0%,
+    #0078d4 18%,
+    #8661c5 38%,
+    #ff66c4 58%,
+    #00bcf2 78%,
+    #0078d4 100%
+  ) !important;
+  background-size: 200% 100% !important;
+  animation: copilot-flow 1.6s linear infinite;
+  box-shadow: none !important;
+  filter: saturate(1.15);
+}
+/* Soft bloom under the ribbon (the “light strip” glow). */
+#nprogress .bar::before {
+  content: "";
+  position: absolute;
+  inset: -3px 0 -4px;
+  background: linear-gradient(
+    90deg,
+    #00bcf2 0%,
+    #0078d4 18%,
+    #8661c5 38%,
+    #ff66c4 58%,
+    #00bcf2 78%,
+    #0078d4 100%
+  );
+  background-size: 200% 100%;
+  animation: copilot-flow 1.6s linear infinite;
+  filter: blur(7px);
+  opacity: 0.9;
+  pointer-events: none;
+  z-index: -1;
+}
+#nprogress .peg {
+  width: 120px !important;
+  box-shadow:
+    0 0 14px #00bcf2,
+    0 0 22px #8661c5,
+    0 0 10px #ff66c4 !important;
+  opacity: 0.9 !important;
+}
+
 /* ---------- motion ---------- */
 @keyframes float-y {
   0%, 100% { transform: translateY(0); }
@@ -994,6 +1049,11 @@ body {
 
 .wing-wave-l { animation: wave-l 0.7s ease-in-out infinite; }
 .wing-wave-r { animation: wave-r 0.7s ease-in-out infinite; }
+/* Think eyes: keep blink, but don’t fight the SMIL glance. */
+.mascot-eye-think {
+  transform-box: fill-box;
+  transform-origin: center;
+}
 .mascot-float { animation: float-y 3.6s ease-in-out infinite; }
 .mascot-shadow { transform-origin: center; animation: shadow-pulse 3.6s ease-in-out infinite; }
 .mascot-eye { transform-box: fill-box; transform-origin: center; animation: blink 4.5s infinite; }
@@ -1017,6 +1077,71 @@ body {
 }
 .typing-dots span:nth-child(2) { animation-delay: 0.15s; }
 .typing-dots span:nth-child(3) { animation-delay: 0.3s; }
+
+/* Coach thinking owl: mascot + rising thought bubbles (replaces typing dots). */
+.owl-thinking {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  line-height: 0;
+}
+.owl-thinking--live .mascot-float {
+  animation-duration: 1.5s;
+}
+.owl-thinking--live .mascot-shadow {
+  animation-duration: 1.5s;
+}
+.owl-thinking__bubbles {
+  position: absolute;
+  top: -18%;
+  right: -22%;
+  width: 58%;
+  height: 62%;
+  pointer-events: none;
+  overflow: visible;
+}
+.owl-thinking__bubbles i {
+  position: absolute;
+  left: 12%;
+  bottom: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #fff;
+  border: 1.5px solid color-mix(in oklch, var(--primary) 40%, #cbd5e1);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.08);
+  color: color-mix(in oklch, var(--primary) 70%, #1f2937);
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1;
+  opacity: 0;
+  animation: think-bubble-rise 1.5s ease-out infinite;
+}
+.owl-thinking__bubbles i:nth-child(1) {
+  width: 22%;
+  aspect-ratio: 1;
+  animation-delay: 0s;
+}
+.owl-thinking__bubbles i:nth-child(2) {
+  left: 28%;
+  width: 34%;
+  aspect-ratio: 1;
+  animation-delay: 0.5s;
+}
+.owl-thinking__bubbles i:nth-child(3) {
+  left: 48%;
+  width: 48%;
+  aspect-ratio: 1;
+  font-size: 55%;
+  animation-delay: 1s;
+}
+@keyframes think-bubble-rise {
+  0% { opacity: 0; transform: translate(0, 8px) scale(0.55); }
+  18% { opacity: 1; }
+  70% { opacity: 1; transform: translate(10px, -42px) scale(1); }
+  100% { opacity: 0; transform: translate(14px, -56px) scale(1.05); }
+}
 .btn-sheen { position: relative; overflow: hidden; }
 .btn-sheen::after {
   content: "";
@@ -1113,5 +1238,8 @@ body {
 @keyframes shimmer { to { transform: translateX(100%); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .mascot-float,.mascot-shadow,.mascot-eye,.sparkle,.pop-in,.typing-dots span,.book-loader__page,.book-loader__shadow,.skeleton-shimmer::after,.wing-wave-l,.wing-wave-r,.drill-field input.wrong{ animation: none; }
+  .mascot-float,.mascot-shadow,.mascot-eye,.sparkle,.pop-in,.typing-dots span,.owl-thinking__bubbles i,.book-loader__page,.book-loader__shadow,.skeleton-shimmer::after,.wing-wave-l,.wing-wave-r,.drill-field input.wrong{ animation: none; }
+  .owl-thinking svg animateTransform { display: none; }
+  #nprogress .bar,
+  #nprogress .bar::before { animation: none; }
 }

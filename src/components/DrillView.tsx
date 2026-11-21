@@ -5,6 +5,7 @@ import { Check, ChevronDown, ChevronUp, Flame, Lightbulb, ListChecks, Plus, Skip
 import { AnimatePresence, motion } from "motion/react";
 import { Confetti } from "@/components/Confetti";
 import { GlossableText } from "@/components/HoverWord";
+import { OwlThinking } from "@/components/illustrations";
 import { pokeOwl } from "@/components/OwlPet";
 import { SaveWordButton } from "@/components/SaveWordButton";
 import { throwText } from "@/components/TextThrow";
@@ -478,14 +479,21 @@ export function DrillView() {
         ) : null}
       </AnimatePresence>
 
-      {busy === "create" && !prompt ? (
-        <p className="text-center text-sm text-muted-foreground">正在为你出题…</p>
-      ) : null}
       {error ? (
         <p className="rounded-xl bg-destructive/10 px-4 py-2.5 text-sm font-medium text-destructive">{error}</p>
       ) : null}
 
-      {prompt ? (
+      {busy === "create" ? (
+        <p
+          className="pop-in flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground"
+          role="status"
+        >
+          <OwlThinking size="md" />
+          正在为你出题…
+        </p>
+      ) : null}
+
+      {prompt && busy !== "create" ? (
         <motion.div
           key={drillId ?? prompt.zh}
           initial={{ opacity: 0, y: 18, scale: 0.98 }}

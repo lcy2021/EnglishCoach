@@ -76,7 +76,7 @@ npm run dev
 
 `npm install` 会读取项目里的 `.npmrc`（`ignore-scripts=true`）。`better-sqlite3` 13 已带上各平台预编译包，安装时直接使用这份二进制。Node.js 22 自带的 npm 10 在看到 `binding.gyp` 时仍会调用 node-gyp；在没有可用 C++ 工具链，或只有 Visual Studio 2026 的机器上，这次编译会失败。
 
-打开 [http://localhost:3010](http://localhost:3010)。每个页面有自己的地址（如 `/stats`、`/drill`、`/vocab`），刷新后仍停在当前页。文章阅读在 `/`。进入某个页面只请求该页自己的数据；侧栏的今日目标和生词数量随首次打开一起带上，换页时不再另发请求。
+打开 [http://localhost:3010](http://localhost:3010)。每个页面有自己的地址（如 `/stats`、`/drill`、`/vocab`），刷新后仍停在当前页。文章阅读在 `/`。进入某个页面只请求该页自己的数据；侧栏的今日目标和生词数量随首次打开一起带上，换页时不再另发请求。客户端换页时顶部会显示一条主题色进度条（`nextjs-toploader`）。
 
 ## 使用流程
 
@@ -90,7 +90,7 @@ npm run dev
 
 | 层 | 选型 |
 | --- | --- |
-| 框架 | Next.js 15（App Router）、React 19、TypeScript、Tailwind CSS |
+| 框架 | Next.js 15（App Router）、React 19、TypeScript、Tailwind CSS、nextjs-toploader（路由顶栏进度） |
 | Agent | LangChain.js / LangGraph、`@langchain/openai` |
 | 聊天 UI | [assistant-ui](https://www.assistant-ui.com/)，SSE 流式回复 |
 | 存储 | SQLite（`better-sqlite3`） |

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo } from "react";
 import { ArrowUp, Eraser, PanelRightClose } from "lucide-react";
-import { Mascot, OwlMark } from "@/components/illustrations";
+import { Mascot, OwlThinking } from "@/components/illustrations";
 import { throwTextAfterPaint } from "@/components/TextThrow";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,8 +41,8 @@ function AssistantMessage() {
   if (!hasText) return null;
   return (
     <MessagePrimitive.Root className="pop-in flex items-start gap-2.5">
-      <div aria-hidden className="grid size-8 shrink-0 place-items-center rounded-full bg-primary">
-        <OwlMark className="size-5" />
+      <div aria-hidden className="size-9 shrink-0 overflow-visible">
+        <Mascot className="w-full" float={false} />
       </div>
       <div className="min-w-0 flex-1 rounded-2xl rounded-tl-md border bg-card px-3.5 py-2 text-sm leading-relaxed">
         <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
@@ -97,11 +97,7 @@ function CoachThread() {
         />
         {busy ? (
           <p className="pop-in flex items-center gap-2 whitespace-nowrap text-sm text-muted-foreground">
-            <span className="typing-dots" aria-hidden>
-              <span />
-              <span />
-              <span />
-            </span>
+            <OwlThinking size="md" />
             {statusMessage || "正在思考"}
           </p>
         ) : null}

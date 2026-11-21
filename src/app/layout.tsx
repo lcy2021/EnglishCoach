@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Literata, Noto_Sans_SC } from "next/font/google";
+import NextTopLoader from "nextjs-toploader";
 import "./globals.css";
 import { ShellState } from "@/components/ShellState";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -51,6 +52,12 @@ export default function RootLayout({
   return (
     <html lang="zh-CN" className="font-sans">
       <body className={`${read.variable} ${ui.variable} antialiased`}>
+        <NextTopLoader
+          color="#00bcf2"
+          height={2}
+          showSpinner={false}
+          shadow={false}
+        />
         <TooltipProvider>
           <ShellState today={shell.today} vocab={shell.vocab}>
             {children}
