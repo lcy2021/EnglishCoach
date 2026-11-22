@@ -21,7 +21,7 @@ import { useWorkspace, type AppRoute } from "@/lib/store/workspace";
 import { pathFromRoute, routeFromPath } from "@/lib/route-path";
 import { GoalRing } from "@/components/GoalRing";
 import { useGoal } from "@/lib/store/goal";
-import { OwlPet, pokeOwl } from "@/components/OwlPet";
+import { pokeOwl } from "@/components/OwlPet";
 import { TextThrow } from "@/components/TextThrow";
 import { Mascot } from "@/components/illustrations";
 import { Button } from "@/components/ui/button";
@@ -389,7 +389,6 @@ export function AppShell() {
             {route === "settings" ? <SettingsView /> : null}
           </div>
         </main>
-        <OwlPet />
         <TextThrow />
       </div>
 
