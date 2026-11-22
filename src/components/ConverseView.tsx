@@ -447,7 +447,7 @@ export function ConverseView() {
         <header className="shrink-0">
           <h1 className="text-3xl font-bold tracking-tight">对话模式</h1>
           <p className="mt-1 text-muted-foreground">
-            自由打字回一句英文（不是填空）。AI 会解释你的说法、给出地道表达，再说下一句并自动朗读。
+            自由打字回一句英文（不是填空）。AI 会按当前语境提示你该说什么，再说下一句并自动朗读。
           </p>
         </header>
       ) : (
@@ -520,12 +520,14 @@ export function ConverseView() {
                     <div
                       className={cn(
                         "max-w-[92%] space-y-1.5 rounded-2xl px-4 py-3",
-                        mine ? "bg-primary text-primary-foreground" : "bg-muted/60",
+                        mine
+                          ? "border border-primary/25 bg-accent text-foreground"
+                          : "bg-muted/60 text-foreground",
                       )}
                       data-deliver={!mine && index === turns.length - 1 ? "converse-line" : undefined}
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <p className="text-xs font-bold tracking-wide opacity-70">
+                        <p className="text-xs font-bold tracking-wide text-muted-foreground">
                           {mine ? "你" : "AI"}
                         </p>
                         {!mine ? (
@@ -549,20 +551,20 @@ export function ConverseView() {
                         <GlossableText text={turn.en} />
                       </p>
                       {!mine && turn.zh ? (
-                        <p className="text-sm opacity-80">{turn.zh}</p>
+                        <p className="text-sm text-muted-foreground">{turn.zh}</p>
                       ) : null}
                       {mine && (turn.feedback || turn.native) ? (
-                        <div className="space-y-2 rounded-xl bg-black/10 px-3 py-2 text-xs leading-relaxed">
+                        <div className="space-y-2 rounded-xl bg-background/70 px-3 py-2 text-xs leading-relaxed">
                           {turn.feedback ? (
                             <p>
-                              <span className="font-bold">解释：</span>
+                              <span className="font-bold">语境提示：</span>
                               {turn.feedback}
                             </p>
                           ) : null}
                           {turn.native ? (
                             <div className="space-y-1">
                               <div className="flex items-center justify-between gap-2">
-                                <p className="font-bold">地道说法</p>
+                                <p className="font-bold">这时可以说</p>
                                 <Button
                                   type="button"
                                   size="sm"

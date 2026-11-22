@@ -5,9 +5,9 @@ export interface ConverseTurn {
   role: "assistant" | "user";
   en: string;
   zh?: string;
-  /** Chinese note about the learner's English (grammar / meaning / tone). */
+  /** Chinese coaching: what this turn called for, and how their reply fit. */
   feedback?: string;
-  /** How a native speaker would say the same idea. */
+  /** English the learner should say in this context (situational model line). */
   native?: string;
 }
 
@@ -87,8 +87,8 @@ Reply ONLY JSON: {"en":string,"zh":string,"feedback":string,"native":string}.
 Rules:
 - en: exactly ONE English sentence for YOUR spoken turn. No second sentence. It must move the dialogue forward and usually end with a soft question or a clear invitation to reply (so the learner has something to say next).
 - zh: a short Chinese gloss of that English sentence.
-- feedback: 1–2 short Chinese sentences about ONLY the learner's latest reply (the current line). Point out what works / what sounds off in that line alone. Do NOT review, quote, or accumulate notes about earlier turns. Do NOT summarize the whole chat. Use "" only when starting (no learner reply yet).
-- native: rewrite ONLY that same latest learner reply as one natural native English sentence with the same meaning. Never copy your own en. Never put your next turn into native. Never merge earlier learner lines into native. If their English is already natural, lightly polish it. Use "" only when starting.
+- feedback: 1–2 short Chinese sentences about THIS turn in context. First say what a natural reply should do here (answer the ask / accept / decline / give a reason / ask back…), then say how the learner's line fit or missed that. Light language notes are OK. Do NOT only polish wording. Do NOT review older turns or summarize the whole chat. Use "" only when starting (no learner reply yet).
+- native: ONE English sentence the learner SHOULD say for this conversational move in context (a model reply to the AI's previous line). Prefer situational fitness over sticking to their wording. If their reply already fits, polish it into that model line; if it misses the point, give a better contextual reply (same intent when clear, or the reply the scene needed). Never copy your own en. Never put your next turn into native. Never merge older learner lines. Use "" only when starting.
 - You are AI-led: after any greeting or small talk, YOU pull the chat toward the tags/topic with a natural bridge. Do not leave the conversation stranded on "I'm fine too / taking it easy / nice to meet you."
 - Forbidden dead-end lines: closed status updates with no ask (e.g. "I'm doing well too, thanks—just taking it easy for now."), pure acknowledgements ("Okay.", "Got it.", "Same here."), or ending after the greeting round.
 - Tags/topic are the destination. Ease in over a few turns — no sudden "What do you think about X?" or "Today's topic is …" — but do not stay in empty small talk for long.
@@ -148,7 +148,7 @@ export async function continueConverse(
     { role: "system", content: SYSTEM },
     {
       role: "user",
-      content: `Continue the dialogue. YOU lead.\nScene destination: ${focus}\nDifficulty: ${spec.level}. ${levelNote(spec.level)}\nLearner replies so far (including this one): ${exchangeCount}.\n${pacing}\nTranscript (context only — do not coach older lines):\n${transcript}\nCurrent learner line to coach (ONLY this): "${line}"\n1) feedback = short Chinese notes on that current line alone; do not mention earlier replies.\n2) native = native rephrase of that current line alone (must differ from your en; must not include older lines).\n3) en + zh = your next spoken turn: react briefly AND drive the scene forward with an ask or clear invitation to reply.\nAlways fill feedback and native for this step.`,
+      content: `Continue the dialogue. YOU lead.\nScene destination: ${focus}\nDifficulty: ${spec.level}. ${levelNote(spec.level)}\nLearner replies so far (including this one): ${exchangeCount}.\n${pacing}\nTranscript (use for context; coach ONLY the latest learner move):\n${transcript}\nLatest learner line: "${line}"\nCoach for CONTEXT first, not wording alone:\n1) feedback = Chinese: what this turn should do in the scene, then how their line fit/missed it (optional tiny language tip).\n2) native = one English sentence they should say here (model reply to the AI line before theirs). Must differ from your en. If their line is off-context, replace it with a fitting reply — do not only make their exact words "more native".\n3) en + zh = your next spoken turn: react briefly AND drive the scene forward with an ask or clear invitation to reply.\nAlways fill feedback and native for this step.`,
     },
   ]);
   return parseReply(textOf(raw.content));
