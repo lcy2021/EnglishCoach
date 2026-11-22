@@ -23,6 +23,10 @@
 *.pem
 Thumbs.db
 
+# local planning notes (not part of the public docs)
+Plan.md
+plan.md
+
 # debug
 npm-debug.log*
 yarn-debug.log*
