@@ -99,7 +99,6 @@ Rules:
 const OPENING_STYLE = `Opening style (sound human, still AI-led):
 - First line: a light greeting PLUS a tiny easy ask a friend/colleague might use (how their day is, if they have a minute, something concrete in the moment).
 - Do NOT open with a broad category interview question (bad: "What do you think about technology / travel / finance?" / "Tell me about your job.").
-- Do NOT start with "Let's talk about …" or "Today's topic is …".
 - The opener must invite a reply; never a closed statement.`;
 
 /** Open a tagged scene with one English sentence from the AI. */

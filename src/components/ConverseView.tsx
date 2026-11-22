@@ -437,16 +437,21 @@ export function ConverseView() {
   );
 
   return (
-    <section className="sheet converse flex min-h-0 flex-col space-y-5">
+    <section
+      className={cn(
+        "sheet converse flex min-h-0 flex-col gap-5",
+        chatting && "converse--active",
+      )}
+    >
       {!chatting ? (
-        <header>
+        <header className="shrink-0">
           <h1 className="text-3xl font-bold tracking-tight">对话模式</h1>
           <p className="mt-1 text-muted-foreground">
             自由打字回一句英文（不是填空）。AI 会解释你的说法、给出地道表达，再说下一句并自动朗读。
           </p>
         </header>
       ) : (
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
           <button
             type="button"
             onClick={() => setShowSettings((v) => !v)}
@@ -473,7 +478,7 @@ export function ConverseView() {
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.25 }}
-            className="overflow-hidden"
+            className="shrink-0 overflow-hidden"
           >
             {settingsPanel}
           </motion.div>
@@ -481,12 +486,14 @@ export function ConverseView() {
       </AnimatePresence>
 
       {error ? (
-        <p className="rounded-xl bg-destructive/10 px-4 py-2.5 text-sm font-medium text-destructive">{error}</p>
+        <p className="shrink-0 rounded-xl bg-destructive/10 px-4 py-2.5 text-sm font-medium text-destructive">
+          {error}
+        </p>
       ) : null}
 
       {busy === "start" ? (
         <p
-          className="pop-in flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground"
+          className="pop-in flex shrink-0 items-center justify-center gap-2 py-16 text-sm text-muted-foreground"
           role="status"
         >
           <OwlThinking size="md" />
@@ -497,7 +504,7 @@ export function ConverseView() {
       {chatting && busy !== "start" ? (
         <Card className="flex min-h-0 flex-1 flex-col border-2">
           <CardContent className="flex min-h-0 flex-1 flex-col gap-4 py-2">
-            <div ref={listRef} className="min-h-[14rem] flex-1 space-y-4 overflow-y-auto pr-1">
+            <div ref={listRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
               {turns.map((turn, index) => {
                 const mine = turn.role === "user";
                 const aiKey = `ai:${index}:${turn.en}`;
@@ -590,11 +597,11 @@ export function ConverseView() {
               ) : null}
             </div>
 
-            <div className="flex items-end gap-2 border-t pt-3">
+            <div className="flex shrink-0 items-end gap-2 border-t pt-3">
               <Textarea
                 data-converse-input=""
                 value={draft}
-                placeholder="自由打字回一句英文，不必按空格填词…"
+                placeholder="输入你的回复"
                 className="min-h-11 max-h-32 resize-y rounded-xl border-2"
                 disabled={busy !== null}
                 rows={2}

@@ -237,6 +237,26 @@ body {
   animation: fade-in 200ms var(--ease-out) both;
 }
 
+/* Converse session: pin tag bar; only the message list scrolls */
+.stage:has(.converse--active) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.stage:has(.converse--active) .stage-view {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.sheet.converse.converse--active {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+}
+
 .coach {
   position: relative;
   height: 100%;
