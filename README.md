@@ -45,7 +45,7 @@
 
 ## 快速开始
 
-需要 Node.js 18+（`better-sqlite3` 为原生模块，不支持 Edge 运行时）。可选：Python 3（用于 Scrapling）。
+需要 Node.js 18+。可选：Python 3（用于 Scrapling）。
 
 ### 配置
 
