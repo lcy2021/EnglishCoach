@@ -157,6 +157,7 @@ export function ReaderView() {
     });
   }
 
+  // Load this paragraph's own draft + last coach check (never reuse another paragraph's UI state).
   useEffect(() => {
     if (!article || selected === null) return;
     let cancelled = false;
@@ -166,18 +167,32 @@ export function ReaderView() {
           `/api/translations?articleId=${article.id}&paragraphIndex=${selected}`,
         );
         const data = (await res.json()) as {
-          translation?: { draftZh?: string };
+          translation?: { draftZh?: string; lastCheckJson?: string | null };
         };
-        if (!cancelled) {
-          setTranslateDraft(data.translation?.draftZh ?? "");
+        if (cancelled) return;
+        // Bail if the user already moved on while the request was in flight.
+        if (useWorkspace.getState().selectedParagraphIndex !== selected) return;
+        setTranslateDraft(data.translation?.draftZh ?? "");
+        let feedback: string | null = null;
+        const raw = data.translation?.lastCheckJson;
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw) as { feedback?: unknown };
+            if (typeof parsed.feedback === "string" && parsed.feedback.trim()) {
+              feedback = parsed.feedback;
+            }
+          } catch {
+            feedback = null;
+          }
         }
+        applyPatch({ translationFeedback: feedback });
       })();
     }, 0);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [article, selected, setTranslateDraft]);
+  }, [article, selected, setTranslateDraft, applyPatch]);
 
   async function handleFetch() {
     if (!url.trim() || fetching) return;
@@ -430,6 +445,7 @@ export function ReaderView() {
       translationFeedback: null,
       statusMessage: null,
     });
+    setTranslateDraft("");
   }
 
   const total = article.paragraphs.length;

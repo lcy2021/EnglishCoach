@@ -58,38 +58,58 @@ export const useWorkspace = create<WorkspaceState>((set) => ({
   setRoute: (route) => set({ route }),
   setChatOpen: (chatOpen) => set({ chatOpen }),
   setSelectedParagraph: (selectedParagraphIndex) =>
-    set({ selectedParagraphIndex }),
+    set((state) => {
+      if (state.selectedParagraphIndex === selectedParagraphIndex) {
+        return { selectedParagraphIndex };
+      }
+      // Each paragraph keeps its own draft/feedback; never leak the previous one.
+      return {
+        selectedParagraphIndex,
+        translateDraft: "",
+        translationFeedback: null,
+      };
+    }),
   setViewLens: (viewLens) => set({ viewLens }),
   setTranslateOpen: (translateOpen) => set({ translateOpen }),
   setTranslateDraft: (translateDraft) => set({ translateDraft }),
   setBusy: (busy) => set({ busy }),
   applyPatch: (patch) =>
-    set((state) => ({
-      route: patch.route ?? state.route,
-      article:
-        patch.article === undefined ? state.article : patch.article,
-      selectedParagraphIndex:
+    set((state) => {
+      const nextSelected =
         patch.selectedParagraphIndex === undefined
           ? state.selectedParagraphIndex
-          : patch.selectedParagraphIndex,
-      viewLens: patch.viewLens ?? state.viewLens,
-      translateOpen:
-        patch.translateOpen === undefined
-          ? state.translateOpen
-          : patch.translateOpen,
-      explainExtractions:
-        patch.explainExtractions ?? state.explainExtractions,
-      translationFeedback:
-        patch.translationFeedback === undefined
-          ? state.translationFeedback
-          : patch.translationFeedback,
-      statusMessage:
-        patch.statusMessage === undefined
-          ? state.statusMessage
-          : patch.statusMessage,
-      pageCommand:
-        patch.pageCommand === undefined ? state.pageCommand : patch.pageCommand,
-    })),
+          : patch.selectedParagraphIndex;
+      const paragraphChanged =
+        patch.selectedParagraphIndex !== undefined &&
+        patch.selectedParagraphIndex !== state.selectedParagraphIndex;
+      return {
+        route: patch.route ?? state.route,
+        article:
+          patch.article === undefined ? state.article : patch.article,
+        selectedParagraphIndex: nextSelected,
+        viewLens: patch.viewLens ?? state.viewLens,
+        translateOpen:
+          patch.translateOpen === undefined
+            ? state.translateOpen
+            : patch.translateOpen,
+        // Clear draft immediately when focus moves so the prior paragraph's text never flashes.
+        translateDraft: paragraphChanged ? "" : state.translateDraft,
+        explainExtractions:
+          patch.explainExtractions ?? state.explainExtractions,
+        translationFeedback:
+          patch.translationFeedback !== undefined
+            ? patch.translationFeedback
+            : paragraphChanged
+              ? null
+              : state.translationFeedback,
+        statusMessage:
+          patch.statusMessage === undefined
+            ? state.statusMessage
+            : patch.statusMessage,
+        pageCommand:
+          patch.pageCommand === undefined ? state.pageCommand : patch.pageCommand,
+      };
+    }),
   addMessage: (message) =>
     set((state) => ({ messages: [...state.messages, message] })),
   appendToMessage: (id, text) =>
@@ -108,6 +128,7 @@ export const useWorkspace = create<WorkspaceState>((set) => ({
       selectedParagraphIndex: 0,
       viewLens: "read",
       translateOpen: false,
+      translateDraft: "",
       explainExtractions: extractions,
       translationFeedback: null,
     }),
