@@ -33,11 +33,17 @@ function UserMessage() {
   );
 }
 
+function messageHasVisibleText(message: {
+  content?: ReadonlyArray<{ type: string; text?: string }>;
+  parts?: ReadonlyArray<{ type: string; text?: string }>;
+}) {
+  const parts = message.parts ?? message.content ?? [];
+  return parts.some((part) => part.type === "text" && !!part.text?.trim());
+}
+
 function AssistantMessage() {
-  // While a reply is running the runtime adds its own empty assistant message; skip it until text arrives.
-  const hasText = useAuiState((s) =>
-    s.message.parts.some((part) => part.type === "text" && part.text.length > 0),
-  );
+  // ExternalStoreRuntime injects an optimistic empty assistant while isRunning; never paint its shell.
+  const hasText = useAuiState((s) => messageHasVisibleText(s.message));
   if (!hasText) return null;
   return (
     <MessagePrimitive.Root className="pop-in flex items-start gap-2.5">
@@ -45,7 +51,13 @@ function AssistantMessage() {
         <Mascot className="w-full" float={false} />
       </div>
       <div className="min-w-0 flex-1 rounded-2xl rounded-tl-md border bg-card px-3.5 py-2 text-sm leading-relaxed">
-        <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
+        <MessagePrimitive.Parts
+          components={{
+            Text: MarkdownText,
+            // Running-with-no-parts still calls Empty; keep the hollow bubble from appearing.
+            Empty: () => null,
+          }}
+        />
       </div>
     </MessagePrimitive.Root>
   );
@@ -89,12 +101,14 @@ function CoachThread() {
             </div>
           </div>
         </ThreadPrimitive.Empty>
-        <ThreadPrimitive.Messages
-          components={{
-            UserMessage,
-            AssistantMessage,
+        <ThreadPrimitive.Messages>
+          {({ message }) => {
+            if (message.role === "user") return <UserMessage />;
+            // Gate on the message snapshot too — useAuiState alone still let an empty shell through.
+            if (!messageHasVisibleText(message)) return null;
+            return <AssistantMessage />;
           }}
-        />
+        </ThreadPrimitive.Messages>
         {busy ? (
           <p className="pop-in flex items-center gap-2 whitespace-nowrap text-sm text-muted-foreground">
             <OwlThinking size="md" />
@@ -134,8 +148,16 @@ export function ChatPanel() {
     };
     const assistantId = crypto.randomUUID();
     state.addMessage(userMessage);
-    state.addMessage({ id: assistantId, role: "assistant", content: "" });
+    // Do not insert an empty assistant row — that hollow bubble is what users keep seeing.
+    // Text is created on the first delta / error note instead.
     state.setBusy(true);
+
+    const ensureAssistant = () => {
+      const live = useWorkspace.getState();
+      if (!live.messages.some((message) => message.id === assistantId)) {
+        live.addMessage({ id: assistantId, role: "assistant", content: "" });
+      }
+    };
 
     const history = [...state.messages, userMessage];
     try {
@@ -188,13 +210,12 @@ export function ChatPanel() {
             | { type: "done"; reply: string }
             | { type: "error"; message: string };
           const live = useWorkspace.getState();
-          if (event.type === "delta") live.appendToMessage(assistantId, event.text);
+          if (event.type === "delta") {
+            ensureAssistant();
+            live.appendToMessage(assistantId, event.text);
+          }
           if (event.type === "status") {
             live.applyPatch({ statusMessage: event.text });
-            const current = live.messages.find((message) => message.id === assistantId);
-            if (current && !current.content) {
-              live.appendToMessage(assistantId, "");
-            }
           }
           if (event.type === "patches") {
             for (const patch of event.patches) {
@@ -208,9 +229,10 @@ export function ChatPanel() {
         }
       }
     } catch (error) {
+      const note = error instanceof Error ? error.message : "出错了，请检查 LLM 配置。";
+      ensureAssistant();
       const live = useWorkspace.getState();
       const current = live.messages.find((message) => message.id === assistantId);
-      const note = error instanceof Error ? error.message : "出错了，请检查 LLM 配置。";
       if (!current?.content) live.appendToMessage(assistantId, note);
     } finally {
       useWorkspace.getState().setBusy(false);
@@ -226,9 +248,10 @@ export function ChatPanel() {
     return () => window.removeEventListener("english-coach:send", handler);
   }, []);
 
-  // The empty assistant placeholder would render as a hollow bubble (two thin lines) until the first token.
+  // Drop blank assistant rows so ExternalStoreRuntime's optimistic placeholder is the only empty one —
+  // and AssistantMessage / the Messages gate refuse to paint that shell.
   const visibleMessages = useMemo(
-    () => messages.filter((message) => message.role !== "assistant" || message.content !== ""),
+    () => messages.filter((message) => message.role !== "assistant" || message.content.trim() !== ""),
     [messages],
   );
 

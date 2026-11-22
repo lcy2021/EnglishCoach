@@ -149,7 +149,7 @@ body {
 }
 
 .app.chat-open {
-  grid-template-columns: 220px minmax(0, 1fr) 360px;
+  grid-template-columns: 220px minmax(0, 1fr) var(--coach-w, 420px);
 }
 
 .rail {
@@ -238,6 +238,7 @@ body {
 }
 
 .coach {
+  position: relative;
   height: 100%;
   min-height: 0;
   overflow: hidden;
@@ -246,6 +247,56 @@ body {
   display: flex;
   flex-direction: column;
   animation: coach-in 240ms var(--ease-drawer) both;
+}
+
+/* Drag strip on the coach's left edge — widens hit area, cursor + accent on hover/drag. */
+.coach-resize {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  width: 8px;
+  height: 100%;
+  margin-left: -4px;
+  cursor: col-resize;
+  touch-action: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+
+.coach-resize::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  border-radius: 1px;
+  background: transparent;
+  transition: background-color 140ms var(--ease-out), width 140ms var(--ease-out);
+}
+
+.coach-resize:hover::after,
+.coach-resize:focus-visible::after,
+.coach-resize[data-active]::after {
+  width: 3px;
+  background: var(--l-accent, var(--color-primary));
+}
+
+.coach-resize:focus-visible {
+  outline: none;
+}
+
+.app.is-resizing-coach {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.app.is-resizing-coach * {
+  cursor: col-resize !important;
+  user-select: none !important;
 }
 
 .coach-md p {
@@ -926,6 +977,10 @@ body {
     min-height: 0;
     border-left: 0;
     border-top: 1px solid var(--line);
+  }
+
+  .coach-resize {
+    display: none;
   }
 
   .stage {

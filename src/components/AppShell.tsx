@@ -14,7 +14,7 @@ import {
   SpellCheck,
 } from "lucide-react";
 import { motion, MotionConfig } from "motion/react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { usePathname } from "next/navigation";
 import { useRouter } from "nextjs-toploader/app";
 import { useWorkspace, type AppRoute } from "@/lib/store/workspace";
@@ -43,6 +43,16 @@ import { StatsView } from "@/components/StatsView";
 import { DrillView } from "@/components/DrillView";
 
 const BANK_ROUTES = ["library", "drill-bank"] as const satisfies readonly AppRoute[];
+
+const COACH_WIDTH_KEY = "english-coach:coach-width";
+const COACH_WIDTH_DEFAULT = 420;
+const COACH_WIDTH_MIN = 280;
+const COACH_WIDTH_MAX = 720;
+
+function clampCoachWidth(width: number, viewport = typeof window !== "undefined" ? window.innerWidth : 1280) {
+  const max = Math.min(COACH_WIDTH_MAX, Math.max(COACH_WIDTH_MIN, Math.floor(viewport * 0.55)));
+  return Math.min(max, Math.max(COACH_WIDTH_MIN, Math.round(width)));
+}
 
 type NavLeaf = { kind: "leaf"; route: AppRoute; label: string; Icon: typeof BookOpen };
 type NavGroup = {
@@ -204,6 +214,44 @@ export function AppShell() {
   const dueWords = useVocab((s) => s.due);
   const bankActive = (BANK_ROUTES as readonly string[]).includes(route);
   const [bankOpen, setBankOpen] = useState(bankActive);
+  const [coachWidth, setCoachWidth] = useState(COACH_WIDTH_DEFAULT);
+  const [resizingCoach, setResizingCoach] = useState(false);
+  const coachWidthRef = useRef(coachWidth);
+  coachWidthRef.current = coachWidth;
+
+  useEffect(() => {
+    try {
+      const saved = Number(localStorage.getItem(COACH_WIDTH_KEY));
+      if (Number.isFinite(saved) && saved > 0) {
+        setCoachWidth(clampCoachWidth(saved));
+      }
+    } catch {
+      /* storage unavailable */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!resizingCoach) return;
+    const onMove = (event: PointerEvent) => {
+      setCoachWidth(clampCoachWidth(window.innerWidth - event.clientX));
+    };
+    const onUp = () => {
+      setResizingCoach(false);
+      try {
+        localStorage.setItem(COACH_WIDTH_KEY, String(coachWidthRef.current));
+      } catch {
+        /* storage unavailable */
+      }
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+  }, [resizingCoach]);
 
   useEffect(() => {
     if (bankActive) setBankOpen(true);
@@ -248,7 +296,10 @@ export function AppShell() {
 
   return (
     <MotionConfig reducedMotion="user">
-    <div className={chatOpen ? "app chat-open" : "app"}>
+    <div
+      className={cn("app", chatOpen && "chat-open", resizingCoach && "is-resizing-coach")}
+      style={chatOpen ? ({ "--coach-w": `${coachWidth}px` } as CSSProperties) : undefined}
+    >
       <aside className="rail !border-sidebar-border !bg-sidebar !px-4">
         <div className="flex items-center gap-2.5 px-2 pb-6">
           <div aria-hidden className="logo-tile size-10 overflow-visible">
@@ -344,6 +395,16 @@ export function AppShell() {
 
       {chatOpen ? (
         <aside className="coach !border-sidebar-border !bg-sidebar">
+          <button
+            type="button"
+            aria-label="调整教练窗口宽度"
+            className="coach-resize"
+            data-active={resizingCoach ? "" : undefined}
+            onPointerDown={(event) => {
+              event.preventDefault();
+              setResizingCoach(true);
+            }}
+          />
           <ChatPanel />
         </aside>
       ) : (
