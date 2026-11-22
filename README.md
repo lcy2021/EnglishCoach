@@ -1,8 +1,14 @@
 # English Coach
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)](https://nextjs.org/)
+
+**Agent-powered English reading workbench** — pull real articles, hover for offline glosses, translate / explain paragraphs, run AI drills & dialogue, and review mistakes. The coach agent shares the same workspace as the UI.
+
 > 读真实的英文文章，边读边练：悬停查词、段落讲解、AI 出题、对话模式、错题复习。一个会“动手”的 AI 教练，和页面共享同一个工作区。
 
-自用的英语阅读练习工作台，基于 Next.js + LangChain.js，数据全部存在本地 SQLite。
+开源的英语阅读练习工作台，基于 Next.js + LangChain.js，数据全部存在本地 SQLite（隐私友好，适合个人或本地部署）。
 
 ## 截图
 
@@ -65,7 +71,8 @@ LLM_MODEL=gpt-4o-mini
 ### 安装与启动
 
 ```bash
-cd english-coach
+git clone https://github.com/lcy2021/EnglishCoach.git
+cd EnglishCoach
 npm install
 npm run dev
 ```
@@ -136,6 +143,10 @@ npm run lint     # 合并前请先通过
 
 - 需要浏览器挑战的网站（强反爬）仍可能拉取失败。
 - 教练的联网搜索默认使用 OpenAI / Azure OpenAI Responses API 的托管搜索，其他兼容端点没有这个能力。在 `.env.local` 填 `TAVILY_API_KEY`（[Tavily](https://tavily.com) 有免费额度）后，改用 Tavily 搜索，任何 LLM 厂商都能用，速度也更快；Tavily 失败时会退回托管搜索。不配置搜索时，仍可直接给链接或粘贴文字。
+
+## Changelog
+
+See [CHANGELOG.md](./CHANGELOG.md). Latest: **v0.1.0**.
 
 ## 许可
 
