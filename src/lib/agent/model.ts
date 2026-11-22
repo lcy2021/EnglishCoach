@@ -7,6 +7,7 @@ export type UsageSource =
   | "chat"
   | "drill-create"
   | "drill-grade"
+  | "converse"
   | "check-translation"
   | "generate-explain"
   | "explain-selection"

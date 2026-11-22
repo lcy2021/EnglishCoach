@@ -18,6 +18,7 @@ import { speak as speakAloud, speechSupported, stopSpeaking } from "@/lib/speech
 import { useToday } from "@/lib/store/today";
 import { useWorkspace } from "@/lib/store/workspace";
 import { DRILL_LEVELS, normalizeWord, type DrillLevel, type SavedDrill, type SlotGrade } from "@/lib/drill/parse";
+import { keepKnownTags, loadDrillPrefs, saveDrillPrefs } from "@/lib/practice-prefs";
 
 interface TagItem {
   id: string;
@@ -48,6 +49,15 @@ export function DrillView() {
   const inputs = useRef<Array<HTMLInputElement | null>>([]);
 
   useEffect(() => {
+    const saved = loadDrillPrefs();
+    if (saved) {
+      if (saved.tags.length > 0) setSelected(saved.tags);
+      setDifficulty(saved.difficulty);
+      setCustomTopic(saved.topic);
+    }
+  }, []);
+
+  useEffect(() => {
     let current = true;
     const timer = window.setTimeout(() => {
       void (async () => {
@@ -57,9 +67,10 @@ export function DrillView() {
         const next = data.tags ?? [];
         setTags(next);
         setSelected((currentSelected) => {
-          if (currentSelected.length > 0) {
-            return currentSelected.filter((label) => next.some((tag) => tag.label === label));
-          }
+          const known = keepKnownTags(currentSelected, next);
+          if (known.length > 0) return known;
+          const saved = keepKnownTags(loadDrillPrefs()?.tags ?? [], next);
+          if (saved.length > 0) return saved;
           const fallback = next.find((tag) => tag.label === "生活用语") ?? next[0];
           return fallback ? [fallback.label] : [];
         });
@@ -71,6 +82,11 @@ export function DrillView() {
       stopSpeaking();
     };
   }, []);
+
+  useEffect(() => {
+    if (selected.length === 0 && !customTopic.trim()) return;
+    saveDrillPrefs({ tags: selected, difficulty, topic: customTopic });
+  }, [selected, difficulty, customTopic]);
 
   const pageCommand = useWorkspace((s) => s.pageCommand);
   useEffect(() => {
@@ -115,9 +131,17 @@ export function DrillView() {
     if (!drill.grades) {
       // Hear the English first, then fill the blanks.
       speakSentence(drill);
-      requestAnimationFrame(() => inputs.current[0]?.focus());
     }
   }
+
+  // Focus the first blank after the drill card mounts (create sets busy first, so showDrill alone is too early).
+  useEffect(() => {
+    if (!prompt || grades !== null || busy !== null) return;
+    const frame = window.requestAnimationFrame(() => {
+      inputs.current[0]?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [drillId, prompt, grades, busy]);
 
   async function openDrill(id: string) {
     setError("");

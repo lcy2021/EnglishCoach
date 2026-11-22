@@ -24,6 +24,8 @@ function welcome(route: AppRoute, hasArticle: boolean): string {
       return hasArticle ? "欢迎回来,点一段试试翻译吧" : "嗨!贴一篇英文文章开始吧";
     case "drill":
       return "来做几道题热热身吧!";
+    case "converse":
+      return "一人一句,开口练起来!";
     case "wrong-book":
       return "复习错题,越练越牢~";
     case "library":

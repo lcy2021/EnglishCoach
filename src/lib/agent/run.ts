@@ -58,6 +58,7 @@ const TOOL_STATUS: Record<string, string> = {
   list_drills: "正在打开资产题目",
   open_drill: "正在打开题目",
   grade_drill: "正在批改",
+  start_converse: "正在打开对话",
   list_vocab: "正在打开生词本",
   add_vocab: "正在加入生词",
   review_vocab: "正在记录复习",

@@ -47,6 +47,7 @@ const SOURCE_LABEL: Record<string, string> = {
   chat: "教练对话",
   "drill-create": "AI 出题",
   "drill-grade": "出题批改",
+  converse: "对话模式",
   "check-translation": "翻译批改",
   "generate-explain": "整篇讲解",
   "paragraph-explain": "段落讲解",

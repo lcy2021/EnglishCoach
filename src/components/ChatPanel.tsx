@@ -66,6 +66,7 @@ function AssistantMessage() {
 const SUGGESTIONS = [
   "找一篇今天能读完的短文",
   "出一道生活用语的题",
+  "用生活用语开始对话",
   "开始复习生词",
   "打开学习总览",
 ] as const;
@@ -85,7 +86,7 @@ function CoachThread() {
             <Mascot className="w-28" />
             <p className="text-lg font-bold">想做什么，直接说</p>
             <span className="max-w-[18rem] text-sm text-muted-foreground">
-              阅读、讲解、翻译、出题、生词、错题、资产、统计和设置，我都能帮你做。
+              阅读、讲解、翻译、出题、对话、生词、错题、资产、统计和设置，我都能帮你做。
             </span>
             <div className="flex max-w-[18rem] flex-wrap justify-center gap-1.5">
               {SUGGESTIONS.map((text) => (
@@ -118,7 +119,7 @@ function CoachThread() {
       </ThreadPrimitive.Viewport>
       <ComposerPrimitive.Root className="flex items-end gap-2 border-t p-3">
         <ComposerPrimitive.Input
-          placeholder="找文章、出题、复习、看统计…"
+          placeholder="找文章、出题、对话、复习、看统计…"
           rows={1}
           className="max-h-32 min-h-10 flex-1 resize-none rounded-xl border-2 bg-background px-3 py-2 text-sm outline-none transition-colors focus-visible:border-primary"
         />

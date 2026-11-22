@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   Library,
   ListChecks,
+  MessagesSquare,
   PanelRightOpen,
   RotateCcw,
   Settings,
@@ -41,6 +42,7 @@ import { useLevel } from "@/lib/store/level";
 import { useSpeech, type Accent } from "@/lib/speech";
 import { StatsView } from "@/components/StatsView";
 import { DrillView } from "@/components/DrillView";
+import { ConverseView } from "@/components/ConverseView";
 
 const BANK_ROUTES = ["library", "drill-bank"] as const satisfies readonly AppRoute[];
 
@@ -67,6 +69,7 @@ type NavItem = NavLeaf | NavGroup;
 const NAV: ReadonlyArray<NavItem> = [
   { kind: "leaf", route: "practice", label: "文章阅读", Icon: BookOpen },
   { kind: "leaf", route: "drill", label: "AI出题", Icon: SpellCheck },
+  { kind: "leaf", route: "converse", label: "对话模式", Icon: MessagesSquare },
   { kind: "leaf", route: "vocab", label: "生词本", Icon: BookMarked },
   { kind: "leaf", route: "wrong-book", label: "复习", Icon: RotateCcw },
   {
@@ -381,6 +384,7 @@ export function AppShell() {
           <div key={route} className="stage-view">
             {route === "practice" ? <ReaderView /> : null}
             {route === "drill" ? <DrillView /> : null}
+            {route === "converse" ? <ConverseView /> : null}
             {route === "wrong-book" ? <WrongBookView /> : null}
             {route === "vocab" ? <VocabView /> : null}
             {route === "library" ? <LibraryView /> : null}

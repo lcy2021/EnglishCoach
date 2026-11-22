@@ -3,6 +3,7 @@ import type { AppRoute } from "./types.ts";
 const APP_ROUTES: readonly AppRoute[] = [
   "practice",
   "drill",
+  "converse",
   "wrong-book",
   "library",
   "drill-bank",

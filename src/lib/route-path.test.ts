@@ -10,7 +10,7 @@ describe("route paths", () => {
   });
 
   it("round-trips every other page", () => {
-    for (const route of ["drill", "wrong-book", "library", "drill-bank", "vocab", "stats", "settings"] as const) {
+    for (const route of ["drill", "converse", "wrong-book", "library", "drill-bank", "vocab", "stats", "settings"] as const) {
       assert.equal(routeFromPath(pathFromRoute(route)), route);
     }
   });

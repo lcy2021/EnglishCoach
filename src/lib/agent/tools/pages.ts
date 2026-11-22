@@ -25,6 +25,7 @@ import type { Rating } from "@/lib/vocab/srs";
 const ROUTES = [
   "practice",
   "drill",
+  "converse",
   "wrong-book",
   "library",
   "drill-bank",
@@ -36,6 +37,7 @@ const ROUTES = [
 const ROUTE_LABEL: Record<AppRoute, string> = {
   practice: "文章阅读",
   drill: "AI出题",
+  converse: "对话模式",
   vocab: "生词本",
   "wrong-book": "复习",
   library: "资产·文章",
@@ -87,7 +89,7 @@ export function buildPageTools(ctx: AgentSessionContext) {
     {
       name: "navigate",
       description:
-        "Open a bare page only when no specialized tool fits. Routes: practice (文章阅读), drill (AI出题), vocab (生词本), wrong-book (复习/错题), library (资产·文章), drill-bank (资产·题目), stats (学习总览), settings (设置). Prefer list_vocab (incl. startReview for 复习生词), list_wrong_book, list_library, list_drills, get_stats, create_drill, or update_settings instead.",
+        "Open a bare page only when no specialized tool fits. Routes: practice (文章阅读), drill (AI出题), converse (对话模式), vocab (生词本), wrong-book (复习/错题), library (资产·文章), drill-bank (资产·题目), stats (学习总览), settings (设置). Prefer list_vocab (incl. startReview for 复习生词), list_wrong_book, list_library, list_drills, get_stats, create_drill, start_converse, or update_settings instead.",
       schema: z.object({ route: z.enum(ROUTES) }),
     },
   );
@@ -208,6 +210,51 @@ export function buildPageTools(ctx: AgentSessionContext) {
       description:
         "Open 资产·题目 and list saved drills plus available tags. Prefer this over navigate(drill-bank).",
       schema: z.object({}),
+    },
+  );
+
+  const start_converse = tool(
+    async ({ tags, topic, difficulty }) => {
+      const chosen = (tags ?? []).map((tag) => tag.trim()).filter(Boolean).slice(0, 8);
+      const extra = (topic ?? "").trim();
+      if (chosen.length === 0 && !extra) {
+        throw new Error("需要至少一个标签或一个对话方向");
+      }
+      for (const tag of chosen) addDrillTag(tag);
+      const level = DRILL_LEVELS.includes(difficulty as (typeof DRILL_LEVELS)[number])
+        ? (difficulty as (typeof DRILL_LEVELS)[number])
+        : "进阶";
+      reportProgress(ctx, "正在打开对话");
+      showPage(
+        ctx,
+        "converse",
+        {
+          converse: {
+            tags: chosen,
+            topic: extra,
+            difficulty: level,
+            autoStart: true,
+          },
+          refresh: ["converse"],
+        },
+        { statusMessage: "已打开对话模式，正在开场" },
+      );
+      return JSON.stringify({
+        ok: true,
+        tags: chosen,
+        topic: extra,
+        difficulty: level,
+      });
+    },
+    {
+      name: "start_converse",
+      description:
+        "Open 对话模式 and start a one-sentence-each spoken English practice with the same tags as AI出题. Use for 开始对话 / 练口语 / 对话模式 — not navigate(converse). Tags can be 生活用语, 职场, 四级, or a new label. Difficulty is 入门, 进阶, or 较难.",
+      schema: z.object({
+        tags: z.array(z.string()).optional(),
+        topic: z.string().optional().describe("Extra scene, such as 咖啡店点单"),
+        difficulty: z.enum(DRILL_LEVELS).optional(),
+      }),
     },
   );
 
@@ -463,6 +510,7 @@ export function buildPageTools(ctx: AgentSessionContext) {
     list_drills,
     open_drill,
     grade_drill,
+    start_converse,
     list_vocab,
     add_vocab,
     review_vocab,

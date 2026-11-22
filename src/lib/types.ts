@@ -52,6 +52,7 @@ export interface WrongBookItem {
 export type AppRoute =
   | "practice"
   | "drill"
+  | "converse"
   | "wrong-book"
   | "library"
   | "drill-bank"
@@ -65,6 +66,13 @@ export interface PageCommand {
   route?: AppRoute;
   /** Open this saved drill once the drill page is showing. */
   drillId?: string;
+  /** Prefill / auto-start 对话模式 with the same tag set as AI出题. */
+  converse?: {
+    tags?: string[];
+    topic?: string;
+    difficulty?: "入门" | "进阶" | "较难";
+    autoStart?: boolean;
+  };
   vocab?: {
     tab?: "review" | "all";
     query?: string;
@@ -80,7 +88,7 @@ export interface PageCommand {
     rate?: number;
     autoPlay?: boolean;
   };
-  refresh?: Array<"library" | "drill-bank" | "vocab" | "wrong-book" | "drill" | "stats">;
+  refresh?: Array<"library" | "drill-bank" | "vocab" | "wrong-book" | "drill" | "converse" | "stats">;
 }
 
 export interface WorkspacePatch {
