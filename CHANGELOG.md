@@ -14,5 +14,3 @@ All notable changes to this project are documented in this file.
 - Mistake book and Leitner-style vocabulary review
 - Learning overview (daily goals, weekly stats, token usage)
 - LangChain agent tools that control the same workspace as the UI
-
-[0.1.0]: https://github.com/lcy2021/EnglishCoach/releases/tag/v0.1.0

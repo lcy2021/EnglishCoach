@@ -144,7 +144,7 @@ npm run lint     # 合并前请先通过
 
 ## Changelog
 
-See [CHANGELOG.md](./CHANGELOG.md). Latest: **v0.1.0**.
+See [CHANGELOG.md](./CHANGELOG.md).
 
 ## 许可
 
